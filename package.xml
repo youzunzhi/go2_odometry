@@ -10,6 +10,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>rclcpp</depend>
   <depend>unitree_go</depend>
 
   <exec_depend>pinocchio</exec_depend>

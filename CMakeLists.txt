@@ -8,6 +8,17 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(unitree_go REQUIRED)
+find_package(sensor_msgs REQUIRED)
+
+add_executable(state_converter_node src/state_converter_node.cpp)
+ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
+
+install(TARGETS
+  state_converter_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # Install Python executables
 install(PROGRAMS
