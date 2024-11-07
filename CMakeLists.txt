@@ -12,7 +12,7 @@ find_package(rclcpp REQUIRED)
 find_package(unitree_go REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-add_executable(state_converter_node src/state_converter_node.cpp)
+add_executable(state_converter_node src/go2_state_converter_node.cpp)
 ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
 
 install(TARGETS
@@ -24,6 +24,12 @@ install(TARGETS
 install(PROGRAMS
   scripts/feet_to_odom.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install launch files.
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
 )
 
 if(BUILD_TESTING)

@@ -4,6 +4,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "unitree_go/msg/low_state.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "rosgraph_msgs/msg/clock.hpp"
 
 class StateConverterNode : public rclcpp::Node
 {
@@ -24,9 +26,18 @@ class StateConverterNode : public rclcpp::Node
                 6,  7,  8,
           })
         {
-            lowstate_subscription_ = this->create_subscription<unitree_go::msg::LowState>("lowstate", 10, std::bind(&StateConverterNode::state_callback, this, std::placeholders::_1));
-            jointstate_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_state", 10);
+            // Force node to use sim_time (and listen to /clock topic)
+            // Allow for temporally synchronizing joint_state msg to imu messages
+            // this->set_parameter(rclcpp::Parameter("use_sim_time", true));
 
+            // Create useful subscribers/publishers
+            clock_publisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", 10);
+            jointstate_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
+
+            imu_subscription_ = this->create_subscription<sensor_msgs::msg::Imu>("utlidar/imu", 10, std::bind(&StateConverterNode::clock_callback, this, std::placeholders::_1));
+            lowstate_subscription_ = this->create_subscription<unitree_go::msg::LowState>("lowstate", 10, std::bind(&StateConverterNode::state_callback, this, std::placeholders::_1));
+
+            // Pre-fill joint state messages
             assert(urdf_joint_names_.size() == nq);
             assert(urdf_to_sdk_index_.size() == nq);
             jointstate_msg_.name = urdf_joint_names_;
@@ -36,19 +47,24 @@ class StateConverterNode : public rclcpp::Node
         }
 
     protected:
-        const size_t nq;
-        const std::vector<std::string> urdf_joint_names_;
-        const std::vector<size_t> urdf_to_sdk_index_;
+        const size_t nq; // Robot DoF
+        const std::vector<std::string> urdf_joint_names_; // Robot joint names
+        const std::vector<size_t> urdf_to_sdk_index_; // Joint indexes in ros msgs (in the urdf order)
 
     private:
         void state_callback(const unitree_go::msg::LowState::SharedPtr msg);
+        void clock_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
 
+        rosgraph_msgs::msg::Clock clock_msg_;
         sensor_msgs::msg::JointState jointstate_msg_;
+        rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr jointstate_publisher_;
+        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscription_;
         rclcpp::Subscription<unitree_go::msg::LowState>::SharedPtr lowstate_subscription_;
 
 };
 
+// Extract and re-order joint sensor measurements
 void StateConverterNode::state_callback(const unitree_go::msg::LowState::SharedPtr msg)
 {
     jointstate_msg_.header.stamp = this->get_clock()->now();
@@ -59,8 +75,15 @@ void StateConverterNode::state_callback(const unitree_go::msg::LowState::SharedP
         jointstate_msg_.effort[index_urdf] = msg->motor_state[index_sdk].tau_est;
     }
     jointstate_publisher_->publish(jointstate_msg_);
-    std::cout << "aaaaa" << std::endl;
 }
+
+// Publish "sim_time" from go2 lidar time
+void StateConverterNode::clock_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
+{
+    clock_msg_.clock = msg->header.stamp;
+    clock_publisher_->publish(clock_msg_);
+}
+
 
 int main(int argc, char * argv[])
 {
