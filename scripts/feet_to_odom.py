@@ -23,12 +23,12 @@ class FeetToOdom(Node):
             10)
 
         self.robot = Go2Loader().robot
-        self.foot_frame_id = [self.robot.model.getFrameId(prefix + "_foot") for prefix in ["FL", "FR", "RL", "RR"]]
+        self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
+        self.foot_frame_id = [self.robot.model.getFrameId(frame_name) for frame_name in self.foot_frame_name]
         self.imu_frame_id = self.robot.model.getFrameId("imu")
 
         self.prefilled_msg = Odometry()
-        self.prefilled_msg.header.frame_id = "odom"
-        self.prefilled_msg.child_frame_id = "utlidar_imu"
+        self.prefilled_msg.child_frame_id = "base"
         self.prefilled_msg.pose.covariance = [0.]*36
         self.prefilled_msg.twist.covariance = [0.]*36
 
@@ -38,26 +38,25 @@ class FeetToOdom(Node):
 
 
     def listener_callback(self, state_msg):
+        # Get sensor measurement
         q = np.array([0]*6 + [1] + [j.q for j in state_msg.motor_state[:12]])
         v = np.array([0]*6 + [j.dq for j in state_msg.motor_state[:12]])
+
+        # Compute positions and velocities
         self.robot.forwardKinematics(q, v)
         oMf_list = [self.robot.data.oMf[id] for id in self.foot_frame_id]
         oMi = self.robot.data.oMf[self.imu_frame_id]
-        v_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.WORLD) for id in self.foot_frame_id]
-        ovi_o = pin.getFrameVelocity(self.robot.model, self.robot.data, self.imu_frame_id, pin.WORLD)
-
-        oMf = oMf_list[0]
-        ovf_o = v_list[0]
-
-        fMi = oMf.actInv(oMi) # TODO : It's not what we want !!
-        ovi_f = ovi_o - ovf_o# TODO : It's not what we want !!
-        fvi_f = oMf.actInv(ovi_f)
+        v_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL) for id in self.foot_frame_id]
 
         # Make message
         odom_msg = self.prefilled_msg
         odom_msg.header.stamp = self.get_clock().now().to_msg()
-        odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = fvi_f.linear
-        self.publisher_.publish(odom_msg)
+        for i in range(len(self.foot_frame_name)):
+            fvo_f = -v_list[i] # Velocity of the base wrt to the foot expressed in the foot frame
+            self.prefilled_msg.header.frame_id = self.foot_frame_name[i]
+            odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = fvo_f.linear
+            odom_msg.twist.twist.angular.x, odom_msg.twist.twist.angular.y, odom_msg.twist.twist.angular.z = fvo_f.angular
+            self.publisher_.publish(odom_msg)
 
 def main(args=None):
     rclpy.init(args=args)
