@@ -47,10 +47,12 @@ class FeetToOdom(Node):
         # Get sensor measurement
         q_unitree = [j.q for j in state_msg.motor_state[:12]]
         v_unitree = [j.dq for j in state_msg.motor_state[:12]]
+        fc_unitree = state_msg.foot_force
 
         # Rearrange joints according to urdf
         q = np.array([0]*6 + [1] + self._unitree_to_urdf_vec(q_unitree))
         v = np.array([0]*6 + self._unitree_to_urdf_vec(v_unitree))
+        f_contact = [fc_unitree[i] for i in [1, 0, 3, 2]]
 
         # Compute positions and velocities
         self.robot.forwardKinematics(q, v)
@@ -61,7 +63,9 @@ class FeetToOdom(Node):
         # Make message
         odom_msg = self.prefilled_msg
         odom_msg.header.stamp = self.get_clock().now().to_msg()
-        for i in range(len(self.foot_frame_name)):
+        for i in range(4):
+            if(f_contact[i]<20):
+                continue # Feet in the air : skip
             fvo_f = -v_list[i] # Velocity of the base wrt to the foot expressed in the foot frame
             self.prefilled_msg.header.frame_id = self.foot_frame_name[i]
             odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = fvo_f.linear
