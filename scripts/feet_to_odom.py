@@ -36,11 +36,21 @@ class FeetToOdom(Node):
         self.prefilled_msg.twist.covariance[1 * (6+1)] = 0.01**2
         self.prefilled_msg.twist.covariance[2 * (6+1)] = 0.01**2
 
+    def _unitree_to_urdf_vec(self, vec):
+        return  [vec[3],  vec[4],  vec[5],
+                 vec[0],  vec[1],  vec[2],
+                 vec[9],  vec[10], vec[11],
+                 vec[6],  vec[7],  vec[8],]
+
 
     def listener_callback(self, state_msg):
         # Get sensor measurement
-        q = np.array([0]*6 + [1] + [j.q for j in state_msg.motor_state[:12]])
-        v = np.array([0]*6 + [j.dq for j in state_msg.motor_state[:12]])
+        q_unitree = [j.q for j in state_msg.motor_state[:12]]
+        v_unitree = [j.dq for j in state_msg.motor_state[:12]]
+
+        # Rearrange joints according to urdf
+        q = np.array([0]*6 + [1] + self._unitree_to_urdf_vec(q_unitree))
+        v = np.array([0]*6 + self._unitree_to_urdf_vec(v_unitree))
 
         # Compute positions and velocities
         self.robot.forwardKinematics(q, v)
