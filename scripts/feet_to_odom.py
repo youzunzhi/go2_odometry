@@ -32,9 +32,9 @@ class FeetToOdom(Node):
         self.prefilled_msg.pose.covariance = [0.]*36
         self.prefilled_msg.twist.covariance = [0.]*36
 
-        self.prefilled_msg.twist.covariance[0 * (6+1)] = 0.01**2
-        self.prefilled_msg.twist.covariance[1 * (6+1)] = 0.01**2
-        self.prefilled_msg.twist.covariance[2 * (6+1)] = 0.01**2
+        self.prefilled_msg.twist.covariance[0 * (6+1)] = 0.001**2
+        self.prefilled_msg.twist.covariance[1 * (6+1)] = 0.001**2
+        self.prefilled_msg.twist.covariance[2 * (6+1)] = 0.001**2
 
     def _unitree_to_urdf_vec(self, vec):
         return  [vec[3],  vec[4],  vec[5],
@@ -58,7 +58,7 @@ class FeetToOdom(Node):
         self.robot.forwardKinematics(q, v)
         oMf_list = [self.robot.data.oMf[id] for id in self.foot_frame_id]
         oMi = self.robot.data.oMf[self.imu_frame_id]
-        v_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL) for id in self.foot_frame_id]
+        v_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL_WORLD_ALIGNED) for id in self.foot_frame_id]
 
         # Make message
         odom_msg = self.prefilled_msg
@@ -67,9 +67,8 @@ class FeetToOdom(Node):
             if(f_contact[i]<20):
                 continue # Feet in the air : skip
             fvo_f = -v_list[i] # Velocity of the base wrt to the foot expressed in the foot frame
-            self.prefilled_msg.header.frame_id = self.foot_frame_name[i]
+            self.prefilled_msg.header.frame_id = self.foot_frame_name[i] #"odom"
             odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = fvo_f.linear
-            odom_msg.twist.twist.angular.x, odom_msg.twist.twist.angular.y, odom_msg.twist.twist.angular.z = fvo_f.angular
             self.publisher_.publish(odom_msg)
 
 def main(args=None):
