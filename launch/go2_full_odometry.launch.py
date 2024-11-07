@@ -28,13 +28,14 @@ def generate_launch_description():
             executable='ekf_node',
             name='ekf_filter_node',
             output='screen',
-            parameters=[ekf_config_file],
+            parameters=[ekf_config_file, {'use_sim_time': True}],
            ),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='imu_trivial_transform',
             output='screen',
+            parameters=[{'use_sim_time': True}],
             arguments="0 0 0 0 0 0 imu utlidar_imu".split(' '),
            ),
 ])
