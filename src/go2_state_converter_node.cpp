@@ -47,6 +47,7 @@ class StateConverterNode : public rclcpp::Node
             jointstate_msg_.effort.resize(nq);
 
             imu_msg_.header.frame_id = "imu";
+            // See datasheet https://www.wit-motion.com/proztcgd/7.html
             imu_msg_.orientation_covariance = {3e-10, 0, 0,
                                                0, 3e-10, 0,
                                                0, 0, 3e-4}; // accuracy = 0.001° (XY), 1° (Z)
