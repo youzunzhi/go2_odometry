@@ -28,7 +28,7 @@ class FeetToOdom(Node):
         self.imu_frame_id = self.robot.model.getFrameId("imu")
 
         self.prefilled_msg = Odometry()
-        self.prefilled_msg.child_frame_id = "base"
+        self.prefilled_msg.header.frame_id = "base"
         self.prefilled_msg.pose.covariance = [0.]*36
         self.prefilled_msg.twist.covariance = [0.]*36
 
@@ -55,10 +55,11 @@ class FeetToOdom(Node):
         f_contact = [fc_unitree[i] for i in [1, 0, 3, 2]]
 
         # Compute positions and velocities
+        ## f = foot, i = imu, b = base
         self.robot.forwardKinematics(q, v)
-        oMf_list = [self.robot.data.oMf[id] for id in self.foot_frame_id]
-        oMi = self.robot.data.oMf[self.imu_frame_id]
-        v_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL_WORLD_ALIGNED) for id in self.foot_frame_id]
+        bMf_list = [self.robot.data.oMf[id] for id in self.foot_frame_id]
+        bMi = self.robot.data.oMf[self.imu_frame_id]
+        Vf_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL) for id in self.foot_frame_id]
 
         # Make message
         odom_msg = self.prefilled_msg
@@ -66,9 +67,11 @@ class FeetToOdom(Node):
         for i in range(4):
             if(f_contact[i]<20):
                 continue # Feet in the air : skip
-            fvo_f = -v_list[i] # Velocity of the base wrt to the foot expressed in the foot frame
-            self.prefilled_msg.header.frame_id = self.foot_frame_name[i] #"odom"
-            odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = fvo_f.linear
+            vb = -Vf_list[i]
+            bMf = bMf_list[i]
+            odom_msg.header.frame_id = self.foot_frame_name[i]
+            odom_msg.child_frame_id = self.foot_frame_name[i]
+            odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = vb.linear
             self.publisher_.publish(odom_msg)
 
 def main(args=None):
