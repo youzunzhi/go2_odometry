@@ -32,15 +32,15 @@ class FeetToOdom(Node):
         self.prefilled_vel_msg.pose.covariance = [0.]*36
         self.prefilled_vel_msg.twist.covariance = [0.]*36
 
-        self.prefilled_vel_msg.twist.covariance[0 * (6+1)] = 0.001**2
-        self.prefilled_vel_msg.twist.covariance[1 * (6+1)] = 0.001**2
-        self.prefilled_vel_msg.twist.covariance[2 * (6+1)] = 0.001**2
+        self.prefilled_vel_msg.twist.covariance[0 * (6+1)] = 1**2
+        self.prefilled_vel_msg.twist.covariance[1 * (6+1)] = 1**2
+        self.prefilled_vel_msg.twist.covariance[2 * (6+1)] = 1**2
 
         self.prefilled_pos_msg = Odometry()
         self.prefilled_pos_msg.header.frame_id = "base"
         self.prefilled_pos_msg.pose.covariance = [0.]*36
         self.prefilled_pos_msg.twist.covariance = [0.]*36
-        self.prefilled_pos_msg.pose.covariance[2 * (6+1)] = 0.001**2
+        self.prefilled_pos_msg.pose.covariance[2 * (6+1)] = 1**2
 
     def _unitree_to_urdf_vec(self, vec):
         return  [vec[3],  vec[4],  vec[5],
