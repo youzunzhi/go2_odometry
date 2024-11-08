@@ -113,15 +113,15 @@ ekf_filter_node:
 # integrating it. If you simply want your measurements to start at 0 for a given sensor, set this to true.
         imu0_relative: true
 
-# [ADVANCED] If your data is subject to outliers, use these threshold settings, expressed as Mahalanobis distances, to
-# control how far away from the current vehicle state a sensor measurement is permitted to be. Each defaults to
-# numeric_limits<double>::max() if unspecified. It is strongly recommended that these parameters be removed if not
-# required. Data is specified at the level of pose and twist variables, rather than for each variable in isolation.
-# For messages that have both pose and twist data, the parameter specifies to which part of the message we are applying
-# the thresholds.
-        imu0_pose_rejection_threshold: 0.8                 # Note the difference in parameter names
-        imu0_twist_rejection_threshold: 0.8                #
-        imu0_linear_acceleration_rejection_threshold: 0.8  #
+# # [ADVANCED] If your data is subject to outliers, use these threshold settings, expressed as Mahalanobis distances, to
+# # control how far away from the current vehicle state a sensor measurement is permitted to be. Each defaults to
+# # numeric_limits<double>::max() if unspecified. It is strongly recommended that these parameters be removed if not
+# # required. Data is specified at the level of pose and twist variables, rather than for each variable in isolation.
+# # For messages that have both pose and twist data, the parameter specifies to which part of the message we are applying
+# # the thresholds.
+#         imu0_pose_rejection_threshold: 0.8                 # Note the difference in parameter names
+#         imu0_twist_rejection_threshold: 0.8                #
+#         imu0_linear_acceleration_rejection_threshold: 0.8  #
 
 
 
