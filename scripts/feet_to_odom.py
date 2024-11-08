@@ -15,7 +15,8 @@ class FeetToOdom(Node):
     def __init__(self):
         super().__init__('feet_to_odom')
 
-        self.publisher_ = self.create_publisher(Odometry, 'odometry/feet', 10)
+        self.vel_publisher_ = self.create_publisher(Odometry, 'odometry/feet_vel', 10)
+        self.pos_publisher_ = self.create_publisher(Odometry, 'odometry/feet_pos', 10)
         self.subscription_ = self.create_subscription(
             LowState,
             '/lowstate',
@@ -27,14 +28,19 @@ class FeetToOdom(Node):
         self.foot_frame_id = [self.robot.model.getFrameId(frame_name) for frame_name in self.foot_frame_name]
         self.imu_frame_id = self.robot.model.getFrameId("imu")
 
-        self.prefilled_msg = Odometry()
-        self.prefilled_msg.header.frame_id = "base"
-        self.prefilled_msg.pose.covariance = [0.]*36
-        self.prefilled_msg.twist.covariance = [0.]*36
+        self.prefilled_vel_msg = Odometry()
+        self.prefilled_vel_msg.pose.covariance = [0.]*36
+        self.prefilled_vel_msg.twist.covariance = [0.]*36
 
-        self.prefilled_msg.twist.covariance[0 * (6+1)] = 0.001**2
-        self.prefilled_msg.twist.covariance[1 * (6+1)] = 0.001**2
-        self.prefilled_msg.twist.covariance[2 * (6+1)] = 0.001**2
+        self.prefilled_vel_msg.twist.covariance[0 * (6+1)] = 0.001**2
+        self.prefilled_vel_msg.twist.covariance[1 * (6+1)] = 0.001**2
+        self.prefilled_vel_msg.twist.covariance[2 * (6+1)] = 0.001**2
+
+        self.prefilled_pos_msg = Odometry()
+        self.prefilled_pos_msg.header.frame_id = "base"
+        self.prefilled_pos_msg.pose.covariance = [0.]*36
+        self.prefilled_pos_msg.twist.covariance = [0.]*36
+        self.prefilled_pos_msg.pose.covariance[2 * (6+1)] = 0.001**2
 
     def _unitree_to_urdf_vec(self, vec):
         return  [vec[3],  vec[4],  vec[5],
@@ -57,22 +63,29 @@ class FeetToOdom(Node):
         # Compute positions and velocities
         ## f = foot, i = imu, b = base
         self.robot.forwardKinematics(q, v)
+        pin.updateFramePlacements(self.robot.model, self.robot.data)
         bMf_list = [self.robot.data.oMf[id] for id in self.foot_frame_id]
-        bMi = self.robot.data.oMf[self.imu_frame_id]
         Vf_list = [pin.getFrameVelocity(self.robot.model, self.robot.data, id, pin.LOCAL) for id in self.foot_frame_id]
 
         # Make message
-        odom_msg = self.prefilled_msg
-        odom_msg.header.stamp = self.get_clock().now().to_msg()
+        odom_msg = self.prefilled_vel_msg
+        pos_msg = self.prefilled_pos_msg
+        pos_msg.header.stamp = odom_msg.header.stamp = self.get_clock().now().to_msg()
         for i in range(4):
             if(f_contact[i]<20):
                 continue # Feet in the air : skip
             vb = -Vf_list[i]
             bMf = bMf_list[i]
+
             odom_msg.header.frame_id = self.foot_frame_name[i]
             odom_msg.child_frame_id = self.foot_frame_name[i]
             odom_msg.twist.twist.linear.x, odom_msg.twist.twist.linear.y, odom_msg.twist.twist.linear.z = vb.linear
-            self.publisher_.publish(odom_msg)
+            self.vel_publisher_.publish(odom_msg)
+
+            pos_msg.header.frame_id = "odom"
+            pos_msg.child_frame_id = "base"
+            pos_msg.pose.pose.position.z = -bMf.translation[2]
+            self.pos_publisher_.publish(pos_msg)
 
 def main(args=None):
     rclpy.init(args=args)
