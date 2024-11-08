@@ -33,8 +33,9 @@ class StateConverterNode : public rclcpp::Node
             // Create useful subscribers/publishers
             clock_publisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", 10);
             jointstate_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
+            imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>("imu", 10);
 
-            imu_subscription_ = this->create_subscription<sensor_msgs::msg::Imu>("utlidar/imu", 10, std::bind(&StateConverterNode::clock_callback, this, std::placeholders::_1));
+            imu_subscription_ = this->create_subscription<sensor_msgs::msg::Imu>("utlidar/imu", 10, std::bind(&StateConverterNode::imu_callback, this, std::placeholders::_1));
             lowstate_subscription_ = this->create_subscription<unitree_go::msg::LowState>("lowstate", 10, std::bind(&StateConverterNode::state_callback, this, std::placeholders::_1));
 
             // Pre-fill joint state messages
@@ -44,6 +45,17 @@ class StateConverterNode : public rclcpp::Node
             jointstate_msg_.position.resize(nq);
             jointstate_msg_.velocity.resize(nq);
             jointstate_msg_.effort.resize(nq);
+
+            imu_msg_.header.frame_id = "imu";
+            imu_msg_.orientation_covariance = {3e-10, 0, 0,
+                                               0, 3e-10, 0,
+                                               0, 0, 3e-4}; // accuracy = 0.001° (XY), 1° (Z)
+            imu_msg_.angular_velocity_covariance = {1e-6, 0, 0,
+                                                    0, 1e-6, 0,
+                                                    0, 0, 1e-6}; //accuracy = 0.07 °/s
+            imu_msg_.linear_acceleration_covariance = {6e-2, 0, 0,
+                                                       0, 6e-2, 0,
+                                                       0, 0, 6e-2}; //accuracy = 25 mG
         }
 
     protected:
@@ -53,10 +65,12 @@ class StateConverterNode : public rclcpp::Node
 
     private:
         void state_callback(const unitree_go::msg::LowState::SharedPtr msg);
-        void clock_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
+        void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
 
         rosgraph_msgs::msg::Clock clock_msg_;
+        sensor_msgs::msg::Imu imu_msg_;
         sensor_msgs::msg::JointState jointstate_msg_;
+        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
         rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr jointstate_publisher_;
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscription_;
@@ -75,10 +89,23 @@ void StateConverterNode::state_callback(const unitree_go::msg::LowState::SharedP
         jointstate_msg_.effort[index_urdf] = msg->motor_state[index_sdk].tau_est;
     }
     jointstate_publisher_->publish(jointstate_msg_);
+
+    imu_msg_.header.stamp = this->get_clock()->now();
+    imu_msg_.orientation.w = msg->imu_state.quaternion[0];
+    imu_msg_.orientation.x = msg->imu_state.quaternion[1];
+    imu_msg_.orientation.y = msg->imu_state.quaternion[2];
+    imu_msg_.orientation.z = msg->imu_state.quaternion[3];
+    imu_msg_.angular_velocity.x = msg->imu_state.gyroscope[0];
+    imu_msg_.angular_velocity.y = msg->imu_state.gyroscope[1];
+    imu_msg_.angular_velocity.z = msg->imu_state.gyroscope[2];
+    imu_msg_.linear_acceleration.x = msg->imu_state.accelerometer[0];
+    imu_msg_.linear_acceleration.y = msg->imu_state.accelerometer[1];
+    imu_msg_.linear_acceleration.z = msg->imu_state.accelerometer[2];
+    imu_publisher_->publish(imu_msg_);
 }
 
 // Publish "sim_time" from go2 lidar time
-void StateConverterNode::clock_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
+void StateConverterNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
 {
     clock_msg_.clock = msg->header.stamp;
     clock_publisher_->publish(clock_msg_);
