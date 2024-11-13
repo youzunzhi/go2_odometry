@@ -30,4 +30,11 @@ def generate_launch_description():
             output='screen',
             parameters=[ekf_config_file, {'use_sim_time': True}],
            ),
+        Node(
+            package='go2_odometry',
+            executable='feet_to_odom.py',
+            name='feet_to_odom',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+           ),
 ])
