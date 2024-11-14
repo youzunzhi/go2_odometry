@@ -26,16 +26,10 @@ class StateConverterNode : public rclcpp::Node
                 6,  7,  8,
           })
         {
-            // Force node to use sim_time (and listen to /clock topic)
-            // Allow for temporally synchronizing joint_state msg to imu messages
-            // this->set_parameter(rclcpp::Parameter("use_sim_time", true));
-
             // Create useful subscribers/publishers
-            clock_publisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", 10);
             jointstate_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
             imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>("imu", 10);
 
-            imu_subscription_ = this->create_subscription<sensor_msgs::msg::Imu>("utlidar/imu", 10, std::bind(&StateConverterNode::imu_callback, this, std::placeholders::_1));
             lowstate_subscription_ = this->create_subscription<unitree_go::msg::LowState>("lowstate", 10, std::bind(&StateConverterNode::state_callback, this, std::placeholders::_1));
 
             // Pre-fill joint state messages
@@ -66,15 +60,12 @@ class StateConverterNode : public rclcpp::Node
 
     private:
         void state_callback(const unitree_go::msg::LowState::SharedPtr msg);
-        void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
 
         rosgraph_msgs::msg::Clock clock_msg_;
         sensor_msgs::msg::Imu imu_msg_;
         sensor_msgs::msg::JointState jointstate_msg_;
         rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
-        rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_publisher_;
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr jointstate_publisher_;
-        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscription_;
         rclcpp::Subscription<unitree_go::msg::LowState>::SharedPtr lowstate_subscription_;
 
 };
@@ -103,13 +94,6 @@ void StateConverterNode::state_callback(const unitree_go::msg::LowState::SharedP
     imu_msg_.linear_acceleration.y = msg->imu_state.accelerometer[1];
     imu_msg_.linear_acceleration.z = msg->imu_state.accelerometer[2];
     imu_publisher_->publish(imu_msg_);
-}
-
-// Publish "sim_time" from go2 lidar time
-void StateConverterNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
-{
-    clock_msg_.clock = msg->header.stamp;
-    clock_publisher_->publish(clock_msg_);
 }
 
 
