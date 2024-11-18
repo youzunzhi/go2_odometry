@@ -21,8 +21,10 @@ install(TARGETS
 )
 
 # Install Python executables
+file(GLOB SCRIPTS_LIST scripts/*.py)
+
 install(PROGRAMS
-  scripts/feet_to_odom.py
+  ${SCRIPTS_LIST}
   DESTINATION lib/${PROJECT_NAME}
 )
 
