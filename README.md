@@ -13,8 +13,7 @@ starts the following nodes
 ##### go2_odometry/state_converter_node.cpp
 Listen to `unitree_ros2/LowState` messages and split them into "standard" ros messages. It also re-arrange the joint order to match urdf order (which is not the order sent by the unitree robot).
 
-However, because the `unitree_ros2/LowState` msg is not timestamped, the node also listen to `utlidar/imu` to get a time stamp and republish it on `/clock` topic for time synchronization between the computer and the robot.
-(Because this node also listen to this clock, all the message are timestamped with it)
+The messages are timestamped using the host clock upon `/lowstate` msg reception (because the `unitree_ros2/LowState` msg is not timestamped)
 
 Finally the published topics are the following:
 * `/imu`: populated by `unitree_ros2/LowState`.`imu`
