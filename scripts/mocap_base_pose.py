@@ -28,11 +28,7 @@ class MocapOdometryNode(Node):
 
         # Connecting to the motion capture
         asyncio.ensure_future(self.setup())
-        print("End of setup")
         asyncio.get_event_loop().run_forever()
-
-
-        # self.timer = self.create_timer(0.01, self.publish_odom_cb) # node callback, not used
 
 
 
@@ -47,13 +43,13 @@ class MocapOdometryNode(Node):
         await connection.stream_frames(components=["6d"], on_packet=self.on_packet)
 
     def on_packet(self, packet):
-        """ Callback function that is called everytime a data packet arrives from QTM """
+        """ Callback function called every time a data packet arrives from QTM """
         
         # print("Framenumber: {}".format(packet.framenumber))
 
         info, bodies = packet.get_6d()
  
-        print("Framenumber: {} - Body count: {}".format(packet.framenumber, info.body_count))
+        # print("Framenumber: {} - Body count: {}".format(packet.framenumber, info.body_count))
 
 
         for body in bodies:
@@ -61,6 +57,7 @@ class MocapOdometryNode(Node):
 
             position, rotation = body
             rotation_matrix = PyKDL.Rotation(rotation[0][0], rotation[0][1], rotation[0][2],rotation[0][3], rotation[0][4], rotation[0][5],rotation[0][6],rotation[0][7],rotation[0][8])
+            print(position)
             print(rotation_matrix)
             qx,qy,qz,qw = rotation_matrix.GetQuaternion()
 
@@ -73,10 +70,10 @@ class MocapOdometryNode(Node):
             transform_msg.child_frame_id = self.get_parameter("base_frame").value
             transform_msg.header.frame_id = self.get_parameter("odom_frame").value
 
-            # translation
-            transform_msg.transform.translation.x = position[0]
-            transform_msg.transform.translation.y = position[1]
-            transform_msg.transform.translation.z = position[2] # + self.get_parameter("base_height").value
+            # translation + convert to meter
+            transform_msg.transform.translation.x = position[0]*0.001
+            transform_msg.transform.translation.y = position[1]*0.001
+            transform_msg.transform.translation.z = position[2]*0.001 # + self.get_parameter("base_height").value
 
             # rotation
             transform_msg.transform.rotation.x = qx
@@ -84,6 +81,7 @@ class MocapOdometryNode(Node):
             transform_msg.transform.rotation.z = qz
             transform_msg.transform.rotation.w = qw
 
+            # print("publishing tf")
             self.tf_broadcaster.sendTransform(transform_msg)
 
             # 
@@ -93,15 +91,15 @@ class MocapOdometryNode(Node):
             odometry_msg.header.frame_id = self.get_parameter("odom_frame").value
 
             # position
-            odometry_msg.pose.pose.position.x = position[0]
-            odometry_msg.pose.pose.position.y = position[1]
-            odometry_msg.pose.pose.position.z = position[2] # + self.get_parameter("base_height").value
+            odometry_msg.pose.pose.position.x = position[0]*0.001
+            odometry_msg.pose.pose.position.y = position[1]*0.001
+            odometry_msg.pose.pose.position.z = position[2]*0.001 # + self.get_parameter("base_height").value
 
             #orientation
-            odometry_msg.pose.pose.orientation.x = 0.
-            odometry_msg.pose.pose.orientation.y = 0.
-            odometry_msg.pose.pose.orientation.z = 0.
-            odometry_msg.pose.pose.orientation.w = 1. # find & change
+            odometry_msg.pose.pose.orientation.x = qx
+            odometry_msg.pose.pose.orientation.y = qy
+            odometry_msg.pose.pose.orientation.z = qz
+            odometry_msg.pose.pose.orientation.w = qw 
 
             # vitesse linéaire
             odometry_msg.twist.twist.linear.x = 0. 
@@ -113,7 +111,10 @@ class MocapOdometryNode(Node):
             odometry_msg.twist.twist.angular.y = 0.
             odometry_msg.twist.twist.angular.z = 0.
 
+            self.odometry_publisher.publish(odometry_msg)
 
+
+'''
     def publish_odom_cb(self):
         timestamp = self.get_clock().now().to_msg()
 
@@ -158,6 +159,7 @@ class MocapOdometryNode(Node):
         odometry_msg.twist.twist.angular.z = 0.
 
         self.odometry_publisher.publish(odometry_msg)
+'''
 
 def main(args=None):
     rclpy.init(args=args)
