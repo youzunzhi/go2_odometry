@@ -27,16 +27,14 @@ class MocapOdometryNode(Node):
 
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
+        self.j = 0
 
-        self.old_time_meas = self.get_clock().now()
 
         # Connecting to the motion capture
         asyncio.ensure_future(self.setup())
         self.loop = asyncio.get_event_loop()
-
-        # Publisher timer
-        self.set_timer(self.loop,self.timer_period)
         self.loop.run_forever()
+        
         
 
     async def setup(self):
@@ -156,29 +154,16 @@ class MocapOdometryNode(Node):
             else:
                 pass #ignore other bodies
 
-            i +=1
+            i += 1
 
+        # Publishing only one for two messages to reduce frequency to approx 150hz
+        if self.j == 1: 
+            self.tf_broadcaster.sendTransform(self.transform_msg)
+            self.odometry_publisher.publish(self.odometry_msg)
+            self.j = 0
+        else:
+            self.j += 1
 
-
-            # self.tf_broadcaster.sendTransform(self.transform_msg)
-            # self.odometry_publisher.publish(self.odometry_msg)
-
-    async def timer_callback(self):
-        self.get_logger().error("SendTransform")
-        self.set_timer(self.loop,self.timer_period)
-        self.tf_broadcaster.sendTransform(self.transform_msg)
-        self.odometry_publisher.publish(self.odometry_msg)
-
-
-    # Function to set the timer and schedule the callback
-    def set_timer(self,loop, delay):
-        print(f"Timer set for {delay} seconds.")
-        loop.call_later(delay, asyncio.create_task, self.timer_callback())
-
-    async def publish_tf(self):
-        self.get_logger().error("SendTransform")
-        self.tf_broadcaster.sendTransform(self.transform_msg)
-        self.odometry_publisher.publish(self.odometry_msg)
                 
     def create_body_index(self,xml_string):
         """ Extract a name to index dictionary from 6dof settings xml,
@@ -195,8 +180,6 @@ class MocapOdometryNode(Node):
     transform_msg = TransformStamped()
     odometry_msg = Odometry()
     body_index = {}
-    timer_period =  0.01 #? for some reason results in 86 Hz and not 100
-    loop = None
 
 
 def main(args=None):
