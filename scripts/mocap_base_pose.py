@@ -27,14 +27,11 @@ class MocapOdometryNode(Node):
 
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
-        self.j = 0
-
 
         # Connecting to the motion capture
         asyncio.ensure_future(self.setup())
         self.loop = asyncio.get_event_loop()
         self.loop.run_forever()
-        
         
 
     async def setup(self):
@@ -59,7 +56,6 @@ class MocapOdometryNode(Node):
 
     def on_packet(self, packet):
         """ Callback function called every time a data packet arrives from QTM """
-        # self.get_logger().error("Packet")
         info, bodies = packet.get_6d()
 
         i = 0 #index
@@ -70,40 +66,11 @@ class MocapOdometryNode(Node):
                 position, rotation = body
 
                 # Quaternions from rotation matrix
-                m00, m01, m02 = rotation[0][0], rotation[0][1], rotation[0][2]
-                m10, m11, m12 = rotation[0][3], rotation[0][4], rotation[0][5]
-                m20, m21, m22 = rotation[0][6], rotation[0][7], rotation[0][8]
-
-                if (m22 < 0):
-                    if (m00 > m11):
-                        t = 1 + m00 - m11 - m22
-                        qx,qy,qz,qw = t, m01+m10, m20+m02, m12-m21
-                        
-                    
-                    else:
-                        t = 1 - m00 + m11 - m22
-                        qx,qy,qz,qw = m01+m10, t, m12+m21, m20-m02 
-                        
-                else:
-                    if (m00 < -m11):
-                        t = 1 - m00 - m11 + m22
-                        qx,qy,qz,qw = m20+m02, m12+m21, t, m01-m10 
-                        
-                    else:
-                        t = 1 + m00 + m11 + m22
-                        qx,qy,qz,qw = m12-m21, m20-m02, m01-m10, t 
-                        
-
-                qx *= 0.5 / math.sqrt(t)
-                qy *= 0.5 / math.sqrt(t)
-                qz *= 0.5 / math.sqrt(t)
-                qw *= 0.5 / math.sqrt(t)
-
+                qx,qy,qz,qw = self.quaternions_from_rot(rotation)
 
                 timestamp = self.get_clock().now().to_msg()
             
                 # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
-                #* transform_msg = TransformStamped()
                 self.transform_msg.header.stamp = timestamp
                 self.transform_msg.child_frame_id = self.get_parameter("base_frame").value
                 self.transform_msg.header.frame_id = self.get_parameter("odom_frame").value
@@ -119,10 +86,7 @@ class MocapOdometryNode(Node):
                 self.transform_msg.transform.rotation.z = qz
                 self.transform_msg.transform.rotation.w = qw
 
-                # self.tf_broadcaster.sendTransform(self.transform_msg)
-                
 
-                #* odometry_msg = Odometry()
                 self.odometry_msg.header.stamp = timestamp
                 self.odometry_msg.child_frame_id = self.get_parameter("base_frame").value
                 self.odometry_msg.header.frame_id = self.get_parameter("odom_frame").value
@@ -148,16 +112,13 @@ class MocapOdometryNode(Node):
                 self.odometry_msg.twist.twist.angular.y = 0.
                 self.odometry_msg.twist.twist.angular.z = 0.
 
-                
-                # self.odometry_publisher.publish(self.odometry_msg)
-
             else:
-                pass #ignore other bodies
+                pass # ignore other bodies
 
             i += 1
 
         # Publishing only one for two messages to reduce frequency to approx 150hz
-        if self.j == 1: 
+        if self.j == self.decimation_count: 
             self.tf_broadcaster.sendTransform(self.transform_msg)
             self.odometry_publisher.publish(self.odometry_msg)
             self.j = 0
@@ -176,10 +137,49 @@ class MocapOdometryNode(Node):
 
         return self.body_index
     
+    def quaternions_from_rot(self,rotation):
+        """ Converts a rotation matrix to quaternions using Mike Day's algorithm
+        (https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2015/01/matrix-to-quat.pdf)"""
+
+        m00, m01, m02 = rotation[0][0], rotation[0][1], rotation[0][2]
+        m10, m11, m12 = rotation[0][3], rotation[0][4], rotation[0][5]
+        m20, m21, m22 = rotation[0][6], rotation[0][7], rotation[0][8]
+
+        if (m22 < 0):
+            if (m00 > m11):
+                t = 1 + m00 - m11 - m22
+                qx,qy,qz,qw = t, m01+m10, m20+m02, m12-m21
+                
+            
+            else:
+                t = 1 - m00 + m11 - m22
+                qx,qy,qz,qw = m01+m10, t, m12+m21, m20-m02 
+                
+        else:
+            if (m00 < -m11):
+                t = 1 - m00 - m11 + m22
+                qx,qy,qz,qw = m20+m02, m12+m21, t, m01-m10 
+                
+            else:
+                t = 1 + m00 + m11 + m22
+                qx,qy,qz,qw = m12-m21, m20-m02, m01-m10, t 
+                
+
+        qx *= 0.5 / math.sqrt(t)
+        qy *= 0.5 / math.sqrt(t)
+        qz *= 0.5 / math.sqrt(t)
+        qw *= 0.5 / math.sqrt(t)
+
+        return qx, qy, qz, qw
+
+
+
     # Class attributes
     transform_msg = TransformStamped()
     odometry_msg = Odometry()
     body_index = {}
+    j = 0 # Decimation counter for reducing mocap messages freq
+    decimation_count = 1 # Decimation count 
 
 
 def main(args=None):
