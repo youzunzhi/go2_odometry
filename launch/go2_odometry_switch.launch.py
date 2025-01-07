@@ -2,20 +2,17 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution, LaunchConfiguration, NotSubstitution, PythonExpression
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration, PythonExpression
 from launch_ros.substitutions import FindPackageShare
-from launch.conditions import IfCondition, UnlessCondition
-
-
-
-#! doit prendre en entrée des types d'odom et doit lancer les bons launch & nodes 
+from launch.conditions import IfCondition
 
 def generate_launch_description():
 
     odom_type_arg = DeclareLaunchArgument(
         'odom_type',
         default_value='use_full_odom',
-        description='Type of odometry desired between : fake, mocap' 
+        description='Type of odometry desired between : fake, mocap'
+    )
 
     full_state_publisher_launch_file = PathJoinSubstitution([
                                     FindPackageShare('go2_odometry'),
@@ -28,7 +25,6 @@ def generate_launch_description():
                                     'launch',
                                     'go2_state_publisher.launch.py'
                                   ])
-
 
 
     return LaunchDescription([
