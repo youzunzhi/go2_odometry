@@ -85,9 +85,9 @@ class MocapOdometryNode(Node):
                     self.transform_msg.header.frame_id = self.get_parameter("odom_frame").value
 
                     # translation + convert to meter
-                    self.transform_msg.transform.translation.x = position[0]*0.001
-                    self.transform_msg.transform.translation.y = position[1]*0.001
-                    self.transform_msg.transform.translation.z = position[2]*0.001
+                    self.transform_msg.transform.translation.x = position[0] #*0.001
+                    self.transform_msg.transform.translation.y = position[1] #*0.001
+                    self.transform_msg.transform.translation.z = position[2] #*0.001
 
                     # rotation
                     self.transform_msg.transform.rotation.x = qx
