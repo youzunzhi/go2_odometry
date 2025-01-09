@@ -24,7 +24,8 @@ class MocapOdometryNode(Node):
 
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
-        self.declare_parameter("wanted_body","go2") # go2, cube or None
+        self.declare_parameter("wanted_body","cube") # go2, cube or None
+        self.declare_parameter("qualisys_ip","192.168.75.2")
 
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
@@ -37,7 +38,7 @@ class MocapOdometryNode(Node):
 
     async def setup(self):
         """ Connects to the Motion Capture system and sets callback on packet received """
-        connection = await qtm_rt.connect("192.168.75.2", version="1.24") # version changed to 1.24
+        connection = await qtm_rt.connect(self.get_parameter("qualisys_ip").value, version="1.24") # version changed to 1.24
 
         if connection is None:
             self.get_logger().error("Could not connect to the Motion Capture")
