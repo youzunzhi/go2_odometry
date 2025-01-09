@@ -26,6 +26,7 @@ class MocapOdometryNode(Node):
         self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("wanted_body","cube") # go2, cube or None
         self.declare_parameter("qualisys_ip","192.168.75.2")
+        self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
 
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
@@ -62,7 +63,7 @@ class MocapOdometryNode(Node):
         # Time management
         self.new_timestamp = packet.timestamp*0.000001
 
-        if (self.new_timestamp - self.prec_timestamp) >= (1/self.publishing_freq):
+        if (self.new_timestamp - self.prec_timestamp) >= (1/self.get_parameter("publishing_freq").value):
 
             info, bodies = packet.get_6d()
 
@@ -181,7 +182,6 @@ class MocapOdometryNode(Node):
     transform_msg = TransformStamped()
     odometry_msg = Odometry()
     body_index = {}
-    publishing_freq = 110 # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
     new_timestamp = 0
     prec_timestamp = 0
 
