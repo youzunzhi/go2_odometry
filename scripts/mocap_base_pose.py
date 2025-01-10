@@ -3,6 +3,12 @@
 Gives odometry of the robot_base based on motion capture readings
 Motion capture : Qualisys with RealTime protocol version 1.24
 '''
+# transformations
+# from tf_transformations import quaternion_from_matrix
+# import numpy as np
+# from geometry_msgs.msg import Quaternion
+# from tf2_geometry_msgs import do_transform
+import PyKDL
 
 import asyncio
 import qtm_rt
@@ -24,7 +30,7 @@ class MocapOdometryNode(Node):
 
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
-        self.declare_parameter("wanted_body","cube") # go2, cube or None
+        self.declare_parameter("wanted_body","go2") # go2, cube or None
         self.declare_parameter("qualisys_ip","192.168.75.2")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
 
@@ -61,7 +67,7 @@ class MocapOdometryNode(Node):
         """ Callback function called every time a data packet arrives from QTM """
 
         # Time management
-        self.new_timestamp = packet.timestamp*0.000001
+        self.new_timestamp = packet.timestamp*0.000001 # convert from µs to seconds
 
         if (self.new_timestamp - self.prec_timestamp) >= (1/self.get_parameter("publishing_freq").value):
 
@@ -74,8 +80,11 @@ class MocapOdometryNode(Node):
 
                     position, rotation = body
 
-                    # Quaternions from rotation matrix
-                    qx,qy,qz,qw = self.quaternions_from_rot(rotation)
+                    # Quaternions from rotation matrix (transpose of matrix sent by mocap)
+                    rotation_matrix = PyKDL.Rotation(rotation[0][0], rotation[0][3], rotation[0][6],
+                                                     rotation[0][1], rotation[0][4], rotation[0][7],
+                                                     rotation[0][2], rotation[0][5], rotation[0][8])
+                    qx,qy,qz,qw = rotation_matrix.GetQuaternion() 
 
                     timestamp = self.get_clock().now().to_msg()
                 
@@ -84,7 +93,7 @@ class MocapOdometryNode(Node):
                     self.transform_msg.child_frame_id = self.get_parameter("base_frame").value
                     self.transform_msg.header.frame_id = self.get_parameter("odom_frame").value
 
-                    # translation + convert from millimeter to meter
+                    # translation + convert from millimeter to meter 
                     self.transform_msg.transform.translation.x = position[0] *0.001
                     self.transform_msg.transform.translation.y = position[1] *0.001
                     self.transform_msg.transform.translation.z = position[2] *0.001
