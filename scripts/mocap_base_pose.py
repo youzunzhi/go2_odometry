@@ -3,18 +3,11 @@
 Gives odometry of the robot_base based on motion capture readings
 Motion capture : Qualisys with RealTime protocol version 1.24
 '''
-# transformations
-# from tf_transformations import quaternion_from_matrix
-# import numpy as np
-# from geometry_msgs.msg import Quaternion
-# from tf2_geometry_msgs import do_transform
-import PyKDL
 
+import PyKDL
 import asyncio
 import qtm_rt
-from qtm_rt.packet import QRTComponentType
 import xml.etree.ElementTree as ET
-import math
 
 import rclpy
 from rclpy.duration import Duration
@@ -149,43 +142,6 @@ class MocapOdometryNode(Node):
             self.body_index[body.text.strip()] = index
 
         return self.body_index
-    
-    def quaternions_from_rot(self,rotation):
-        """ Converts a rotation matrix to quaternions using Mike Day's algorithm
-        (https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2015/01/matrix-to-quat.pdf)"""
-
-        m00, m01, m02 = rotation[0][0], rotation[0][1], rotation[0][2]
-        m10, m11, m12 = rotation[0][3], rotation[0][4], rotation[0][5]
-        m20, m21, m22 = rotation[0][6], rotation[0][7], rotation[0][8]
-
-        if (m22 < 0):
-            if (m00 > m11):
-                t = 1 + m00 - m11 - m22
-                qx,qy,qz,qw = t, m01+m10, m20+m02, m12-m21
-                
-            
-            else:
-                t = 1 - m00 + m11 - m22
-                qx,qy,qz,qw = m01+m10, t, m12+m21, m20-m02 
-                
-        else:
-            if (m00 < -m11):
-                t = 1 - m00 - m11 + m22
-                qx,qy,qz,qw = m20+m02, m12+m21, t, m01-m10 
-                
-            else:
-                t = 1 + m00 + m11 + m22
-                qx,qy,qz,qw = m12-m21, m20-m02, m01-m10, t 
-                
-
-        qx *= 0.5 / math.sqrt(t)
-        qy *= 0.5 / math.sqrt(t)
-        qz *= 0.5 / math.sqrt(t)
-        qw *= 0.5 / math.sqrt(t)
-
-        return qx, qy, qz, qw
-
-
 
     # Class attributes
     transform_msg = TransformStamped()
