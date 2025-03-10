@@ -1,6 +1,5 @@
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration, PythonExpression
 from launch_ros.substitutions import FindPackageShare
@@ -32,19 +31,18 @@ def generate_launch_description():
                                     'go2_full_odometry.launch.py'
                                   ])
 
-
     return LaunchDescription([
 
         odom_type_arg,
 
         IncludeLaunchDescription(
         PythonLaunchDescriptionSource([mocap_launch_file]),
-        condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'mocap"]))
+        condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'mocap'"]))
         ),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([fake_odom_launch_file]),
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'fake"]))
+            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'fake'"]))
         ),
 
         IncludeLaunchDescription(
