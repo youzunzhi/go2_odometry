@@ -14,16 +14,22 @@ def generate_launch_description():
         description='Type of odometry desired between : fake, mocap'
     )
 
+    mocap_launch_file = PathJoinSubstitution([
+                        FindPackageShare('go2_odometry'),
+                        'launch',
+                        'go2_mocap.launch.py'
+                        ])
+    
+    fake_odom_launch_file = PathJoinSubstitution([
+                            FindPackageShare('go2_odometry'),
+                            'launch',
+                            'go2_fake_odom.launch.py'
+                            ])
+
     full_state_publisher_launch_file = PathJoinSubstitution([
                                     FindPackageShare('go2_odometry'),
                                     'launch',
                                     'go2_full_odometry.launch.py'
-                                  ])
-
-    minimal_state_publisher_launch_file = PathJoinSubstitution([
-                                    FindPackageShare('go2_odometry'),
-                                    'launch',
-                                    'go2_state_publisher.launch.py'
                                   ])
 
 
@@ -31,29 +37,15 @@ def generate_launch_description():
 
         odom_type_arg,
 
-        Node(
-            package="go2_odometry",
-            executable="fake_odom.py",
-            name='fake_odom',
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'), "' == 'fake'"])) 
+        IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([mocap_launch_file]),
+        condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'mocap"]))
         ),
 
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([minimal_state_publisher_launch_file]),
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'), "' == 'fake'"]))
+            PythonLaunchDescriptionSource([fake_odom_launch_file]),
+            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'fake"]))
         ),
-
-        Node(
-            package="go2_odometry",
-            executable="mocap_base_pose.py",
-            name='mocap_base_estimator',
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'mocap'"]))   
-        ),
-
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([minimal_state_publisher_launch_file]),
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'mocap'"]))  
-        ),  
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([full_state_publisher_launch_file]),
