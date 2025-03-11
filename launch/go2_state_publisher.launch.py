@@ -1,16 +1,11 @@
-import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from example_robot_data import getModelPath
+from go2_description import GO2_DESCRIPTION_URDF_PATH
 
 def generate_launch_description():
-    # Read go2 urdf from example-robot-data
-    urdf_subpath = "go2_description/urdf/go2.urdf"
-    urdf_path = os.path.join(getModelPath(urdf_subpath), urdf_subpath)
-    with open(urdf_path, 'r') as infp:
-        robot_desc = infp.read()
+    # Read go2 urdf from go2_description
+    with open(GO2_DESCRIPTION_URDF_PATH, 'r') as info:
+        robot_desc = info.read()
 
     return LaunchDescription([
         Node(
@@ -19,7 +14,7 @@ def generate_launch_description():
             name='robot_state_publisher',
             output='screen',
             parameters=[{'robot_description': robot_desc}],
-            arguments=[urdf_path]),
+            arguments=[GO2_DESCRIPTION_URDF_PATH]),
         Node(
             package='go2_odometry',
             executable='state_converter_node',
