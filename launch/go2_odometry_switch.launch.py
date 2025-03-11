@@ -13,6 +13,12 @@ def generate_launch_description():
         description='Type of odometry desired between : fake, mocap'
     )
 
+    fake_odom_base_height_arg = DeclareLaunchArgument(
+                            'base_height',
+                            default_value=TextSubstitution(text='0.30'),
+                            description='[IF FAKE ODOM] Height of the robot base.'
+    )
+
     mocap_base_frame_arg = DeclareLaunchArgument(
                             'base_frame',
                             default_value='base',
@@ -65,6 +71,7 @@ def generate_launch_description():
         mocap_object_name_arg,
         mocap_ip_arg,
         mocap_publishing_freq_arg,
+        fake_odom_base_height_arg,
 
         odom_type_arg,
 
