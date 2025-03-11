@@ -5,6 +5,10 @@ Go2 Odometry
 Provide a simple state estimation for the unitree Go2 robot, via the [robot_localization](http://docs.ros.org/en/melodic/api/robot_localization/html/index.html) package.
 It also provides a simple node to convert unitree custom messages into "standard" ros messages and re-publish them on separate topics.
 
+
+>[!IMPORTANT]
+>Ressources concerning motion capture setup and building instructions for mocap attachements to the Go2 can be found [here](/ressources/README.md)
+
 ## Launchfiles
 
 ### go2_odometry_switch.launch.py
