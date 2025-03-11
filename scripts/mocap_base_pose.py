@@ -27,6 +27,25 @@ class MocapOdometryNode(Node):
         self.declare_parameter("qualisys_ip","192.168.75.2")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
 
+        # Check if publishing freq is a correct value
+        if isinstance(self.get_parameter("publishing_freq").value, int) is False or self.get_parameter("publishing_freq").value > 300 or self.get_parameter("publishing_freq").value < 0:
+            self.get_logger().error("Invalid value for publishing_freq parameter, must be an interger belonging to [0;300]")
+            
+            self.destroy_node()
+            return
+        
+        
+        
+
+
+        self.get_logger().info("MoCap started with parameters:")
+        self.get_logger().info("base_frame: "+self.get_parameter("base_frame").value)
+        self.get_logger().info("odom_frame: "+self.get_parameter("odom_frame").value)
+        self.get_logger().info("qualisys_ip: "+self.get_parameter("qualisys_ip").value)
+        self.get_logger().info("wanted_body: "+self.get_parameter("wanted_body").value)
+        self.get_logger().info("publishing_freq: " + str(self.get_parameter("publishing_freq").value))
+
+
         self.tf_broadcaster = TransformBroadcaster(self)
         self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
 
@@ -44,7 +63,7 @@ class MocapOdometryNode(Node):
             self.get_logger().error("Could not connect to the Motion Capture")
             #! for now the node does not destroy itself when failing to connect
             self.destroy_node() #! to check
-            return
+            return      
         
         xml_string = await connection.get_parameters(parameters=['6d'])
         self.body_index = self.create_body_index(xml_string)
