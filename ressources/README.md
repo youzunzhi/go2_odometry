@@ -1,11 +1,13 @@
 ## Hardware description and building instructions
- todo: 
+TODO:
  config QTM
 
 
 
 
- # Parts
+# Parts
+> [!IMPORTANT]
+> All mocap markers used here are 14mm spherical ones.
 ## Helmet
 ##### 
 
@@ -16,8 +18,8 @@
 
 | File name                 | Use                                     |
 | :------------------------ | :-------------------------------------- |
-| mocap_helmet_v2.FCStd     | CAD file, modify this one if needed     |
-| MocapHelmet_v2_1.stl      | STL file                                |
+| go2_mocap_helmet.FCStd    | CAD file, modify this one if needed     |
+| go2_mocap_helmet.stl      | STL file                                |
 
 
 ##### Putting on
@@ -27,7 +29,7 @@
 
 ##### Modifying
 
-To modify this part first modify the body called "MocapHelmetGO2" then convert it to mesh and subtract the mesh called "TêteScaled001". You can then export the mesh as a STL for 3D printing.
+To modify this part first modify the body called "MocapHelmet001" then convert it to mesh and subtract the mesh called "Head_Scaled1.001". You can then export the mesh as a STL for 3D printing.
 
 ## Rail attachement
 
@@ -83,6 +85,6 @@ No special precautions
 
 # Motion Capture (Qualisys) Setup
 
-The settings for the rigid body can be found in the file _Mocap settings/go2.xml_ and can be loaded in the qualisys software in the _setting panels_ -> _6DOF tracking _-> _Load Bodies_
+The settings for the rigid body can be found in the file _ressources/go2.xml_ and can be loaded in the qualisys software in the _setting panels_ -> _6DOF tracking _-> _Load Bodies_
 
 
