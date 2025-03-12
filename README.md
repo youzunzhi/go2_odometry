@@ -12,7 +12,7 @@ It also provides a simple node to convert unitree custom messages into "standard
 ## Launchfiles
 
 ### go2_odometry_switch.launch.py
-"Main" launch file that takes a "`mocap_type`" argument to select between odometry sources.
+"Main" launch file that takes a `mocap_type` argument to select between odometry sources.
 The choices are : `use_full_odom` (default), `fake`, `mocap`
 
 Command: 
@@ -29,6 +29,16 @@ Calls the **go2_fake_odom.launch.py** file.
 - `mocap_type:=mocap`
 Calls the **go2_mocap.launch.py** file.
 
+Parameters available depending on the odometry used :
+| Type of odometry choosen | | | | | |
+|-- |-- | --| --|--|--|
+|`use_full_odom`| No parameters |
+|`fake` | base_height|
+| `mocap`|base_frame|odom_frame|wanted_body|qualisys_ip|publishing_freq|
+
+Details on each parameter are given in the launchfile description below.
+
+---
 
 ### go2_full_odometry.launch.py
 This file launches **go2_state_publisher.launch.py** detailled further down.
@@ -55,7 +65,10 @@ This node subscribes to:
 It the publishes on:
 *`/odometry/feet_pos` and `/odometry/feet_vel`: For the ekf node to consume.
 
+---
 ### go2_mocap.launch.py
+Connects to a Qualisys Mocap System and converts the data recevied in the expected output format of an odometry node of our Go2 stack. This allows to have a "perfect" odometry node that contains the ground truth data.
+
 Launches the following:
 
 ##### go2_odometry/mocap_base_pose.py 
@@ -72,10 +85,12 @@ Takes several ros parameters :
 - qualisys_ip (default: 192.168.75.2) : IP used to communicate with the motion capture software
 - publishing_freq (default: 110) : publishing frequency of the transform & odometry topics
 
+---
+### go2_fake_odometry.launch.py
+Sets the robot to a fixed position (0,0,base_height) (base_height being a parameter) and fixed orientation (quaternion of 0,0,0,1). Used for debugging purposes.
 
-## go2_fake_odometry.launch.py
-Starts the following nodes:
-This file launches **go2_state_publisher.launch.py** detailled further down.
+Starts the following:
+ **go2_state_publisher.launch.py** detailled further down.
 
 ##### go2_odometry/fake_odom.py
 Fake odometry node.
@@ -91,7 +106,7 @@ Takes several ros parameters :
 
 
 
- 
+ ---
 ### go2_state_publisher.launch.py
 Starts the following nodes:
 This file launches **go2_state_publisher.launch.py** detailled further down.
