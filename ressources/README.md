@@ -16,7 +16,7 @@ python -m pip install qtm-rt
 #### Configuration of the 6 DOF body 
 The parameters for the 6 DOF body to be tracked need to be added to the **Qualisys Track Manager** software (that should normally be present and running in the PC physically connected to the mocap cameras).
 
-The settings for the rigid body can be found in the file **[ressources/Go2-QTM-Body.xml](Go2-QTM-Body.xml)** and can be loaded in the qualisys software by going to _setting panels_ -> _6DOF tracking _ -> _Load Bodies_.
+The settings for the rigid body can be found in the file **[ressources/Go2-QTM-Body.xml](Go2-QTM-Body.xml)** and can be loaded in the qualisys software by going to *setting panels* -> *6DOF tracking* -> *Load Bodies*.
 
 You should now see an object labeled **Go2**.
 
