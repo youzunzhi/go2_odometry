@@ -1,15 +1,36 @@
+Motion Capture Instructions
+==
+## Software setup
+
+#### Additionnal installations
+Running the mocap script requires adding two more packages to your local installation:
+```bash
+# PyKDL for rotation conversions
+conda install python-orocos-kdl 
+
+# Qualisys Realtime package
+python -m pip install pip --upgrade # Upgrade to latest pip
+python -m pip install qtm-rt
+```
+
+#### Configuration of the 6 DOF body 
+The parameters for the 6 DOF body to be tracked need to be added to the **Qualisys Track Manager** software (that should normally be present and running in the PC physically connected to the mocap cameras).
+
+The settings for the rigid body can be found in the file **[ressources/Go2-QTM-Body.xml](Go2-QTM-Body.xml)** and can be loaded in the qualisys software by going to _setting panels_ -> _6DOF tracking _ -> _Load Bodies_.
+
+You should now see an object labeled **Go2**.
+
+---
 ## Hardware description and building instructions
-TODO:
- config QTM
+All parts are 3D printed using PLA and the markers are secured using double sided tape.
 
-
-
-
-# Parts
 > [!IMPORTANT]
 > All mocap markers used here are 14mm spherical ones.
-## Helmet
-##### 
+
+### Parts
+
+#### Helmet
+ 
 
 | ![](photos/image-1736521381091.png?raw=1) | ![](photos/image-1736521391096.png?raw=1) |
 | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- |
@@ -31,12 +52,12 @@ TODO:
 
 To modify this part first modify the body called "MocapHelmet001" then convert it to mesh and subtract the mesh called "Head_Scaled1.001". You can then export the mesh as a STL for 3D printing.
 
-## Rail attachement
+#### Rail attachement
 
 | ![](photos/image-1736521515563.png?raw=1) | ![](photos/image-1736521527914.png?raw=1) |
 | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- |
 
-##### 
+
 
 ##### Files
 
@@ -60,7 +81,7 @@ To modify this part first modify the body called "MocapHelmet001" then convert i
 
 No special precautions
 
-## Back or "Tail"
+#### Back or "Tail"
 
 ##### <img src="photos/image-1736522398812.png?raw=1" width="429" />
 
@@ -82,9 +103,4 @@ No special precautions
 ##### Modifying
 
 No special precautions
-
-# Motion Capture (Qualisys) Setup
-
-The settings for the rigid body can be found in the file _ressources/go2.xml_ and can be loaded in the qualisys software in the _setting panels_ -> _6DOF tracking _-> _Load Bodies_
-
 
