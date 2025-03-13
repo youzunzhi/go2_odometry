@@ -1,5 +1,8 @@
 Motion Capture Instructions
 ==
+[!INFO]
+> The photos and 3D models are stored using git lfs. If you want to get the files on your PC you will need to install git lfs and run  `git lfs pull` . 
+
 ## Software setup
 
 #### Additionnal installations
