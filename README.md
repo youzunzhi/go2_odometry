@@ -7,7 +7,7 @@ It also provides a simple node to convert unitree custom messages into "standard
 
 
 >[!IMPORTANT]
->Ressources concerning motion capture setup and building instructions for mocap attachements to the Go2 can be found [here](/ressources/README.md)
+>Ressources concerning motion capture setup and building instructions for mocap attachements to the Go2 can be found [here](ressources/README.md)
 
 ## Launchfiles
 
