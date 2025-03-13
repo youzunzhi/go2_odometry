@@ -28,7 +28,7 @@ You should now see an object labeled **Go2**.
 All parts are 3D printed using PLA and the markers are secured using double sided tape.
 
 > [!IMPORTANT]
-> All mocap markers used here are 14mm spherical ones.
+> All mocap markers used here are 14mm spherical ones with a ~1m plastic disc base.
 
 ### Parts
 
