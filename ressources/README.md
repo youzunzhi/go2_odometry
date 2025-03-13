@@ -40,10 +40,10 @@ All parts are 3D printed using PLA and the markers are secured using double side
 
 ##### Files
 
-| File name                 | Use                                     |
-| :------------------------ | :-------------------------------------- |
-| go2_mocap_helmet.FCStd    | CAD file, modify this one if needed     |
-| go2_mocap_helmet.stl      | STL file                                |
+| File name                 | Internal Object Name | Use |
+| :------------------------:| :-----------: | :--------------------------------------: |
+| [go2_mocap_attachments.FCStd](CAD/go2_mocap_attachments.FCStd)| MocapHelmet001   | CAD file, modify this one if needed     |
+| [go2_mocap_helmet.stl](STL/go2_mocap_helmet.stl)|   /   | STL file                                |
 
 
 ##### Putting on
@@ -64,10 +64,10 @@ To modify this part first modify the body called "MocapHelmet001" then convert i
 
 ##### Files
 
-| File name             | Use                                     |
-| :-------------------- | :-------------------------------------- |
-| go2_mocap_rails.FCStd | CAD file, modify this one if needed     |
-| go2_mocap_rails.stl   | STL file                                |
+| File name                 | Internal Object Name | Use |
+| :------------------------:| :-----------: | :--------------------------------------: |
+| [go2_mocap_attachments.FCStd](CAD/go2_mocap_attachments.FCStd)| rail   | CAD file, modify this one if needed     |
+| [go2_mocap_rails.stl](STL/go2_mocap_rails.stl) |  \  | STL file  |
 
 
 ##### Putting on
@@ -90,10 +90,10 @@ No special precautions
 
 ##### Files
 
-| File name            | Use                                     |
-| :------------------- | :-------------------------------------- |
-| go2_mocap_back.FCStd | CAD file, modify this one if needed     |
-| go2_mocap_back.stl   | STL file                                |
+| File name                 | Internal Object Name | Use |
+| :------------------------:| :-----------: | :--------------------------------------: |
+| [go2_mocap_attachments.FCStd](CAD/go2_mocap_attachments.FCStd)| back  | CAD file, modify this one if needed     |
+| [go2_mocap_back.stl](STL/go2_mocap_back.stl) |   \   | STL file                                |
 
 
 ##### Putting on
