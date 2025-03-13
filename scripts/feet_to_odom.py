@@ -8,7 +8,7 @@ from unitree_go.msg import LowState
 
 import numpy as np
 import pinocchio as pin
-from example_robot_data.robots_loader import Go2Loader
+from go2_description import loadGo2
 
 class FeetToOdom(Node):
 
@@ -23,7 +23,7 @@ class FeetToOdom(Node):
             self.listener_callback,
             10)
 
-        self.robot = Go2Loader().robot
+        self.robot = loadGo2()
         self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
         self.foot_frame_id = [self.robot.model.getFrameId(frame_name) for frame_name in self.foot_frame_name]
         self.imu_frame_id = self.robot.model.getFrameId("imu")
