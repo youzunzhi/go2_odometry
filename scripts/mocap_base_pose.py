@@ -23,7 +23,7 @@ class MocapOdometryNode(Node):
 
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
-        self.declare_parameter("wanted_body","go2") # go2, cube or None
+        self.declare_parameter("wanted_body","Go2") # go2, cube or None
         self.declare_parameter("qualisys_ip","192.168.75.2")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
 
