@@ -11,6 +11,8 @@ find_package(rclpy REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(unitree_go REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 add_executable(state_converter_node src/go2_state_converter_node.cpp)
 ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
@@ -18,6 +20,16 @@ ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
 install(TARGETS
   state_converter_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Build msgs
+set(msg_files
+  "msg/OdometryVector.msg"
+)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  ${msg_files}
+  DEPENDENCIES builtin_interfaces std_msgs sensor_msgs
 )
 
 # Install Python executables
