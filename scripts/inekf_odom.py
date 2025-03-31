@@ -86,12 +86,15 @@ class Inekf(Node):
                [0, 1, 0],
                [0, 0, 1]]) # Initial rotation 
         
+        quat_init = np.array([-0.00111727, -0.0520058, -0.02145091,  0.99841575])
+        rot_init = Rotation.from_quat(quat_init)
+        
         v0 = np.zeros(3) # initial velocity
-        p0 = np.array([0, 0, 0.07]) # initial position
+        p0 = np.array([-0.017, 0, 0.07]) # initial position in simulation
         bg0 = np.zeros(3) # initial gyroscope bias
         ba0 = np.zeros(3) # initial accelerometer bias
 
-        initial_state.setRotation(R0)
+        initial_state.setRotation(rot_init.as_matrix())
         initial_state.setVelocity(v0)
         initial_state.setPosition(p0)
         initial_state.setGyroscopeBias(bg0)
@@ -103,7 +106,7 @@ class Inekf(Node):
         noise_params.setAccelerometerNoise(0.1)
         noise_params.setGyroscopeBiasNoise(0.00001)
         noise_params.setAccelerometerBiasNoise(0.0001)
-        noise_params.setContactNoise(0.01)
+        noise_params.setContactNoise(0.001)
 
         self.filter = InEKF(initial_state, noise_params)
         self.filter.setGravity(np.zeros(3))
@@ -113,6 +116,7 @@ class Inekf(Node):
 
         pose_vec = state_msg.pose_vec
         feet_names_in_contact = state_msg.feet_names
+        #self.get_logger().info('Feet in contact ' + str(state_msg.feet_names))
         
         contact_list = []
         kinematics_list = []
@@ -137,13 +141,26 @@ class Inekf(Node):
                 kinematics = Kinematics()
                 kinematics.id = i
                 kinematics.pose = pose_matrix
-                kinematics.covariance = pose.covariance
+                kinematics.covariance = np.eye(6) * 0.01 #pose.covariance
 
                 kinematics_list.append(kinematics)
+
+                #self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
+                #self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
         
+        #self.get_logger().info('Contact list' + str(contact_list))
         self.filter.setContacts(contact_list)
         self.filter.correctKinematics(kinematics_list)
-        #self.get_logger().info('Correct kinematics')
+        new_pose = self.filter.getState().getPosition()
+        #if len(kinematics_list) > 0:
+            #for i in range(len(kinematics_list)):
+                #new_c = self.filter.getState().getX()[:3,5+i]
+                #self.get_logger().info('World contact ' + str(i) + ' is ' + str(new_c))
+        #self.get_logger().info('Correct kinematics ' + str(new_pose))
+        """ if len(kinematics_list) > 0:
+            exit() """
+        if np.isnan(new_pose[0]):
+            exit()
 
 
 
@@ -194,22 +211,24 @@ class Inekf(Node):
         self.filter.propagate(self.imu_measurement_prev, self.dt)
         
         new_state = self.filter.getState()
-        new_r = new_state.getX()[0:3,0:3]
-        new_p = new_state.getX()[0:3,4:5]
+        new_r = new_state.getRotation()
+        new_p = new_state.getPosition()
         new_v = new_state.getX()[0:3,3:4]
+        #self.get_logger().info('imu measure ' + str(self.imu_measurement_prev))
+        #self.get_logger().info('Position ' + str(new_p))
 
         r = Rotation.from_matrix([[new_r[0][0], new_r[0][1], new_r[0][2]],
                                   [new_r[1][0], new_r[1][1], new_r[1][2]],
                                   [new_r[2][0], new_r[2][1], new_r[2][2]]])
         
         # ROS2 transform
-        self.transform_msg.transform.translation.x = new_p[0][0] 
-        self.transform_msg.transform.translation.y = new_p[1][0]
-        self.transform_msg.transform.translation.z = new_p[2][0]
+        self.transform_msg.transform.translation.x = new_p[0]
+        self.transform_msg.transform.translation.y = new_p[1]
+        self.transform_msg.transform.translation.z = new_p[2]
 
-        self.odom_msg.pose.pose.position.x = new_p[0][0] 
-        self.odom_msg.pose.pose.position.y = new_p[1][0] 
-        self.odom_msg.pose.pose.position.z = new_p[2][0] 
+        self.odom_msg.pose.pose.position.x = new_p[0]
+        self.odom_msg.pose.pose.position.y = new_p[1]
+        self.odom_msg.pose.pose.position.z = new_p[2]
 
         x,y,z,w = r.as_quat()
         #print("RPY rotation:", r.as_euler("xyz",degrees=True))
