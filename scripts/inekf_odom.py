@@ -86,15 +86,17 @@ class Inekf(Node):
                [0, 1, 0],
                [0, 0, 1]]) # Initial rotation 
         
-        quat_init = np.array([-0.00111727, -0.0520058, -0.02145091,  0.99841575])
+        quat_init = np.array([-0.00588, 0.0416, -0.00319,  0.999])
+        #quat_init = np.array([-0.00111727, -0.0520058, -0.02145091,  0.99841575])
         rot_init = Rotation.from_quat(quat_init)
         
         v0 = np.zeros(3) # initial velocity
-        p0 = np.array([-0.017, 0, 0.07]) # initial position in simulation
+        p0 = np.array([0, 0, 0.07]) # initial position in simulation
         bg0 = np.zeros(3) # initial gyroscope bias
         ba0 = np.zeros(3) # initial accelerometer bias
+        gravity = np.array([0, 0, -9.81])
 
-        initial_state.setRotation(rot_init.as_matrix())
+        initial_state.setRotation(R0)
         initial_state.setVelocity(v0)
         initial_state.setPosition(p0)
         initial_state.setGyroscopeBias(bg0)
@@ -109,7 +111,7 @@ class Inekf(Node):
         noise_params.setContactNoise(0.001)
 
         self.filter = InEKF(initial_state, noise_params)
-        self.filter.setGravity(np.zeros(3))
+        self.filter.setGravity(gravity)
 
     def listener_feet_callback(self, state_msg):
         self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9 
@@ -201,12 +203,12 @@ class Inekf(Node):
         # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
         timestamp = self.get_clock().now().to_msg()
         self.transform_msg.header.stamp = timestamp
-        self.transform_msg.child_frame_id = self.get_parameter("base_frame").value
-        self.transform_msg.header.frame_id = self.get_parameter("odom_frame").value
+        self.transform_msg.child_frame_id = "base" #self.get_parameter("base_frame").value
+        self.transform_msg.header.frame_id = "odom" #self.get_parameter("odom_frame").value
 
         self.odom_msg.header.stamp = timestamp
-        self.odom_msg.child_frame_id = self.get_parameter("base_frame").value
-        self.odom_msg.header.frame_id = self.get_parameter("odom_frame").value
+        self.odom_msg.child_frame_id = "base" #self.get_parameter("base_frame").value
+        self.odom_msg.header.frame_id = "odom" #self.get_parameter("odom_frame").value
         
         self.filter.propagate(self.imu_measurement_prev, self.dt)
         

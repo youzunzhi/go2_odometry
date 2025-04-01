@@ -59,7 +59,7 @@ class FeetToOdom(Node):
         pos_list = []
         feet_list = []
         for i in range(4):
-            if(f_contact[i]<20):
+            if(f_contact[i]<10):
                 continue # Feet in the air : skip
 
             feet_list.append(self.foot_frame_name[i])

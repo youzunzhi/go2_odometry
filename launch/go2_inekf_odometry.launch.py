@@ -15,9 +15,9 @@ def generate_launch_description():
                                   ])
 
     return LaunchDescription([
-        #IncludeLaunchDescription(
-        #    PythonLaunchDescriptionSource([state_publisher_launch_file])
-        #),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([state_publisher_launch_file])
+        ),
         Node(
             package='go2_odometry',
             executable='inekf_odom.py',
