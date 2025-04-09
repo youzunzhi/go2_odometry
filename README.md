@@ -99,6 +99,12 @@ Takes several ros parameters :
 - wanted_body (default: 'Go2') : name of the object to be tracked in the motion capture software
 - qualisys_ip (default: 192.168.75.2) : IP used to communicate with the motion capture software
 - publishing_freq (default: 110) : publishing frequency of the transform & odometry topics
+>[!NOTE]
+>If you'd like to use the motion capture as a ground truth run:
+>```bash
+>ros2 launch go2_odometry go2_mocap.launch.py mocap_ground_truth:=1
+>```
+> The mocap pose will be published as a transform between `odom` and `base_mocap`
 
 ---
 ### go2_fake_odometry.launch.py
