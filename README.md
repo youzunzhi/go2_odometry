@@ -69,7 +69,10 @@ It the publishes on:
 ### go2_mocap.launch.py
 Connects to a Qualisys Mocap System and converts the data recevied in the expected output format of an odometry node of our Go2 stack. This allows to have a "perfect" odometry node that contains the ground truth data.
 
-Launches the following:
+Two versions of this node can be launched depending on the value of the parameter `mocap_ground_truth`:
+#### `mocap_ground_truth = 0` : [default value] node acts as a perfect pose estimator :
+Are launched the following;
+**go2_state_publisher.launch.py** (detailled further down).
 
 ##### go2_odometry/mocap_base_pose.py 
 Node charged of the communication with the Motion Capture system.
@@ -81,7 +84,19 @@ Published topics:
 Takes several ros parameters :
 - base_frame (default: 'base') : name of the robot base frame
 - odom_frame (default: 'odom') : name of the fixed frame 
-- wanted_body (default: 'go2') : name of the object to be tracked in the motion capture software
+- wanted_body (default: 'Go2') : name of the object to be tracked in the motion capture software
+- qualisys_ip (default: 192.168.75.2) : IP used to communicate with the motion capture software
+- publishing_freq (default: 110) : publishing frequency of the transform & odometry topics
+
+#### `mocap_ground_truth = 1` : node acts as a ground truth publisher :
+
+Published topics:
+* `/tf` : Transform between *odom_frame* (fixed) and *base_frame* (tied to the robot)
+
+Takes several ros parameters :
+- base_frame (default: '**base_mocap**') : name of the robot base frame
+- odom_frame (default: 'odom') : name of the fixed frame 
+- wanted_body (default: 'Go2') : name of the object to be tracked in the motion capture software
 - qualisys_ip (default: 192.168.75.2) : IP used to communicate with the motion capture software
 - publishing_freq (default: 110) : publishing frequency of the transform & odometry topics
 
