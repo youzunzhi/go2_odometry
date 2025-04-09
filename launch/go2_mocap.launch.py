@@ -22,7 +22,7 @@ def generate_launch_description():
 
     mocap_base_frame_arg = DeclareLaunchArgument(
                             'base_frame',
-                            default_value='base_mocap',
+                            default_value='base',
                             description='[IF MOCAP] Name of the base frame (fixed to robot) of the mocap.'
     )
     mocap_odom_frame_arg = DeclareLaunchArgument(

@@ -27,6 +27,7 @@ class MocapOdometryNode(Node):
         self.declare_parameter("qualisys_ip","192.168.75.2")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
         self.declare_parameter("mocap_ground_truth",0)
+        self.use_mocap_as_ground_truth = self.get_parameter("mocap_ground_truth").value
 
         # Check if publishing freq is a correct value
         if isinstance(self.get_parameter("publishing_freq").value, int) is False or self.get_parameter("publishing_freq").value > 300 or self.get_parameter("publishing_freq").value < 0:
@@ -41,14 +42,14 @@ class MocapOdometryNode(Node):
         self.get_logger().info("qualisys_ip: "+self.get_parameter("qualisys_ip").value)
         self.get_logger().info("wanted_body: "+self.get_parameter("wanted_body").value)
         self.get_logger().info("publishing_freq: " + str(self.get_parameter("publishing_freq").value))
-        self.get_logger().info("mocap_ground_truth: " + str(self.get_parameter("mocap_ground_truth").value))
+        self.get_logger().info("mocap_ground_truth: " + str(self.use_mocap_as_ground_truth ))
 
-        use_mocap_as_ground_truth = self.get_parameter("mocap_ground_truth").value
+        
 
 
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        if use_mocap_as_ground_truth == 0: # publish odometry if mocap is used as a perfect pose estimator
+        if self.use_mocap_as_ground_truth == 0: # publish odometry if mocap is used as a perfect pose estimator
             self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
 
         # Connecting to the motion capture
@@ -105,7 +106,7 @@ class MocapOdometryNode(Node):
                     # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
                     self.transform_msg.header.stamp = timestamp
                     
-                    if use_mocap_as_ground_truth == 1: # change the name of the transformation published so that it doesn't interfer with robot control when used as ground truth
+                    if self.use_mocap_as_ground_truth == 1: # change the name of the transformation published so that it doesn't interfer with robot control when used as ground truth
                         self.transform_msg.child_frame_id = 'base_mocap' 
                     else:
                         self.transform_msg.child_frame_id = self.get_parameter("base_frame").value
@@ -126,7 +127,7 @@ class MocapOdometryNode(Node):
                     self.tf_broadcaster.sendTransform(self.transform_msg)
 
 
-                    if use_mocap_as_ground_truth == 0: # publish odometry if mocap is used as a perfect pose estimator
+                    if self.use_mocap_as_ground_truth == 0: # publish odometry if mocap is used as a perfect pose estimator
                         self.odometry_msg.header.stamp = timestamp
                         self.odometry_msg.child_frame_id = self.get_parameter("base_frame").value
                         self.odometry_msg.header.frame_id = self.get_parameter("odom_frame").value
