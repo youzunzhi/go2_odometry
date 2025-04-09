@@ -19,7 +19,7 @@ from nav_msgs.msg import Odometry
 
 class MocapOdometryNode(Node):
     def __init__(self):
-        super().__init__('feet_to_odom') 
+        super().__init__('mocap_base_estimator') 
 
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
