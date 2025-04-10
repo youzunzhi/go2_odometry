@@ -67,8 +67,34 @@ It the publishes on:
 
 ---
 ### go2_mocap.launch.py
-Connects to a Qualisys Mocap System and converts the data recevied in the expected output format of an odometry node of our Go2 stack. This allows to have a "perfect" odometry node that contains the ground truth data.
+Connects to a Qualisys Motion Capture and converts the data recevied in the expected output format of an odometry node of our Go2 stack. This allows to have a "perfect" odometry node that contains the ground truth data.
 
+By default the node launches:
+**go2_state_publisher.launch.py** (detailled further down).
+
+##### go2_odometry/mocap_base_pose.py 
+Node charged of the communication with the Qualisys Motion Capture system.
+
+Published topics:
+* `/odometry/filtered`: position of the robot base
+* `/tf` : Transform between *odom_frame* (fixed) and *base_frame* (tied to the robot)
+
+Ros parameters :
+- `base_frame` (default: 'base') : name of the robot base frame
+- `odom_frame` (default: 'odom') : name of the fixed frame 
+- `wanted_body` (default: 'Go2') : name of the object to be tracked in the motion capture software
+- `qualisys_ip` (default: 192.168.75.2) : IP used to communicate with the motion capture software
+- `publishing_freq` (default: 110) : publishing frequency of the transform & odometry topics
+- `mimic_go2_odometry` (default: 1) : defines the dehavior of the mocap node
+
+
+**If the parameter `mimic_go2_odometry` is passed to 0 when running the launch file the behavior of the node is altered so that it can be used as a ground truth publisher :**
+What changes is:
+- **go2_state_publisher.launch.py** is not launched
+- **go2_odometry/mocap_base_pose.py** is launched but :
+    1. The topic `/odometry/filtered` is not published anymore
+    2. The tf now publishes a transform between `odom` and **`base_mocap`** (originally between `odom` and `base`)
+<!-- 
 Two versions of this node can be launched depending on the value of the parameter `mocap_ground_truth`:
 1. **`mocap_ground_truth = 0` : [default value] node acts as a perfect pose estimator :**
     
@@ -100,11 +126,11 @@ Two versions of this node can be launched depending on the value of the paramete
     - wanted_body (default: 'Go2') : name of the object to be tracked in the motion capture software
     - qualisys_ip (default: 192.168.75.2) : IP used to communicate with the motion capture software
     - publishing_freq (default: 110) : publishing frequency of the transform & odometry topics
-      
+       -->
 >[!NOTE]
 >If you'd like to use the motion capture as a ground truth run:
 >```bash
->ros2 launch go2_odometry go2_mocap.launch.py mocap_ground_truth:=1
+>ros2 launch go2_odometry go2_mocap.launch.py mimic_go2_odometry:=0
 >```
 > The mocap pose will be published as a transform between `odom` and `base_mocap`
 

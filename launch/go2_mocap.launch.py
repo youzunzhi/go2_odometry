@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration, TextSubstitution
 from launch_ros.substitutions import FindPackageShare
-from launch.conditions import  UnlessCondition
+from launch.conditions import  IfCondition
 
 def generate_launch_description():
 
@@ -72,7 +72,7 @@ def generate_launch_description():
         IncludeLaunchDescription
         (
             PythonLaunchDescriptionSource([minimal_state_publisher_launch_file]),
-            condition=UnlessCondition(LaunchConfiguration('mimic_go2_odometry'))
+            condition=IfCondition(LaunchConfiguration('mimic_go2_odometry'))
         )
 
 
