@@ -21,14 +21,14 @@ class MocapOdometryNode(Node):
     def __init__(self):
         super().__init__('mocap_base_estimator') 
 
+        # ros2 parameters ======================================================
         self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("wanted_body","Go2") # go2, cube or None
         self.declare_parameter("qualisys_ip","192.168.75.2")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
         self.declare_parameter("mimic_go2_odometry",0)
         self.mocap_as_pose_estimate = bool(self.get_parameter("mimic_go2_odometry").value)
-
-        # change name od base_frame according to use choosen
+        # change name of base_frame according to use case
         if  self.mocap_as_pose_estimate :
             self.declare_parameter("base_frame","base")
         else:
@@ -40,13 +40,14 @@ class MocapOdometryNode(Node):
             
             self.destroy_node()
             return
-
-
+        
+        # publishers ===========================================================
         self.tf_broadcaster = TransformBroadcaster(self)
 
         if self.mocap_as_pose_estimate : # publish odometry if mocap is used as a perfect pose estimator
             self.odometry_publisher = self.create_publisher(Odometry, 'odometry/filtered', 10)
 
+        # startup info =========================================================
         self.get_logger().info("MoCap started with parameters:")
         self.get_logger().info("base_frame: "+self.get_parameter("base_frame").value)
         self.get_logger().info("odom_frame: "+self.get_parameter("odom_frame").value)
@@ -56,7 +57,7 @@ class MocapOdometryNode(Node):
         self.get_logger().info("mimic_go2_odometry: " + str(self.mocap_as_pose_estimate ))
 
 
-        # Connecting to the motion capture
+        # Connecting to the motion capture =====================================
         asyncio.ensure_future(self.setup())
         self.loop = asyncio.get_event_loop()
         self.loop.run_forever()
