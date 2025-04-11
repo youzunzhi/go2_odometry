@@ -246,6 +246,14 @@ class Inekf(Node):
         self.odom_msg.pose.pose.orientation.y = y
         self.odom_msg.pose.pose.orientation.z = z
         self.odom_msg.pose.pose.orientation.w = w 
+
+        self.odom_msg.twist.twist.linear.x = float(new_v[0])
+        self.odom_msg.twist.twist.linear.y = float(new_v[1])
+        self.odom_msg.twist.twist.linear.z = float(new_v[2])
+
+        self.odom_msg.twist.twist.angular.x = float(self.imu_measurement_prev[0])
+        self.odom_msg.twist.twist.angular.y = float(self.imu_measurement_prev[1])
+        self.odom_msg.twist.twist.angular.z = float(self.imu_measurement_prev[2])
         
 
         self.tf_broadcaster.sendTransform(self.transform_msg)

@@ -70,10 +70,10 @@ class DumbOdom(Node):
                         float(state_msg.imu_state.gyroscope[2])]
 
         # Get true rotation
-        true_quat = np.array([float(state_msg.imu_state.quaternion[1]), 
-                              float(state_msg.imu_state.quaternion[2]),
-                              float(state_msg.imu_state.quaternion[3]),
-                              float(state_msg.imu_state.quaternion[0])
+        true_quat = np.array([-float(state_msg.imu_state.quaternion[1]), 
+                              -float(state_msg.imu_state.quaternion[2]),
+                              -float(state_msg.imu_state.quaternion[3]),
+                              -float(state_msg.imu_state.quaternion[0])
         ])
 
         # Rearrange joints according to urdf
