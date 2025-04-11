@@ -9,12 +9,13 @@ from unitree_go.msg import LowState
 import numpy as np
 import pinocchio as pin
 from go2_description import loadGo2
+from scipy.spatial.transform import Rotation
 
 class FeetToOdom(Node):
 
     def __init__(self):
         super().__init__('feet_to_odom')
-
+        
         self.vel_publisher_ = self.create_publisher(Odometry, 'odometry/feet_vel', 10)
         self.pos_publisher_ = self.create_publisher(Odometry, 'odometry/feet_pos', 10)
         self.subscription_ = self.create_subscription(
@@ -29,6 +30,7 @@ class FeetToOdom(Node):
         self.imu_frame_id = self.robot.model.getFrameId("imu")
 
         self.prefilled_vel_msg = Odometry()
+        self.prefilled_vel_msg.header.frame_id = "base"
         self.prefilled_vel_msg.pose.covariance = [0.]*36
         self.prefilled_vel_msg.twist.covariance = [0.]*36
 
@@ -41,6 +43,7 @@ class FeetToOdom(Node):
         self.prefilled_pos_msg.pose.covariance = [0.]*36
         self.prefilled_pos_msg.twist.covariance = [0.]*36
         self.prefilled_pos_msg.pose.covariance[2 * (6+1)] = 1**2
+        
 
     def _unitree_to_urdf_vec(self, vec):
         return  [vec[3],  vec[4],  vec[5],

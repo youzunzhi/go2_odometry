@@ -12,10 +12,12 @@ find_package(rclcpp REQUIRED)
 find_package(unitree_go REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(pinocchio REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(inekf REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(go2_description REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 # Build msgs
@@ -33,7 +35,11 @@ ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
 
 add_executable(inekf_odometry src/inekf_odometry.cpp)
 target_link_libraries(inekf_odometry inekf::inekf)
-ament_target_dependencies(inekf_odometry rclcpp sensor_msgs nav_msgs geometry_msgs tf2_ros)
+ament_target_dependencies(inekf_odometry rclcpp sensor_msgs nav_msgs geometry_msgs tf2_ros unitree_go)
+
+add_executable(feet_to_odom src/feet_to_odom.cpp)
+target_link_libraries(feet_to_odom pinocchio::pinocchio go2_description::go2_description)
+ament_target_dependencies(feet_to_odom rclcpp sensor_msgs nav_msgs geometry_msgs unitree_go)
 
 rosidl_target_interfaces(state_converter_node 
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
@@ -41,9 +47,13 @@ rosidl_target_interfaces(state_converter_node
 rosidl_target_interfaces(inekf_odometry 
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
+  rosidl_target_interfaces(feet_to_odom 
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
 install(TARGETS
   state_converter_node
   inekf_odometry
+  feet_to_odom
   DESTINATION lib/${PROJECT_NAME}
 )
 

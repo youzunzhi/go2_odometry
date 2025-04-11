@@ -20,15 +20,8 @@ def generate_launch_description():
         ),
         Node(
             package='go2_odometry',
-            executable='inekf_odometry',
-            name='inekf_odom',
-            output='screen',
-            parameters=[],
-           ),
-        Node(
-            package='go2_odometry',
-            executable='feet_to_odom',
-            name='feet_to_odom',
+            executable='dumb_odom.py',
+            name='dumb_odom',
             output='screen',
             parameters=[],
            ),
