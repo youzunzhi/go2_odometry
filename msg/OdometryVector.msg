@@ -1,5 +1,5 @@
 std_msgs/Header header
 
-string[] feet_names
+bool[] contact_states
 geometry_msgs/PoseWithCovariance[] pose_vec
 geometry_msgs/TwistWithCovariance[] twist_vec

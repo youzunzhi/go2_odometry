@@ -2,7 +2,6 @@
 
 import math
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 import rclpy
 from rclpy.node import Node
@@ -10,6 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from nav_msgs.msg import Odometry
 from go2_odometry.msg import OdometryVector
+import pinocchio as pin
 
 from sensor_msgs.msg import Imu
 from tf2_ros import TransformBroadcaster
@@ -86,10 +86,6 @@ class Inekf(Node):
                [0, 1, 0],
                [0, 0, 1]]) # Initial rotation 
         
-        quat_init = np.array([-0.00588, 0.0416, -0.00319,  0.999])
-        #quat_init = np.array([-0.00111727, -0.0520058, -0.02145091,  0.99841575])
-        rot_init = Rotation.from_quat(quat_init)
-        
         v0 = np.zeros(3) # initial velocity
         p0 = np.array([0, 0, 0.07]) # initial position in simulation
         bg0 = np.zeros(3) # initial gyroscope bias
@@ -117,52 +113,52 @@ class Inekf(Node):
         self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9 
 
         pose_vec = state_msg.pose_vec
-        feet_names_in_contact = state_msg.feet_names
+        contact_states = state_msg.contact_states
         #self.get_logger().info('Feet in contact ' + str(state_msg.feet_names))
         
         contact_list = []
         kinematics_list = []
 
         for i in range(len(self.foot_frame_name)):
-            if self.foot_frame_name[i] in feet_names_in_contact:
-                
-                contact_list.append((i, True))
-                pose = pose_vec[i]
-                
-                r = Rotation.from_quat([pose.pose.orientation.x, 
-                                        pose.pose.orientation.y,
-                                        pose.pose.orientation.z,
-                                        pose.pose.orientation.w])
+            contact_list.append((i, contact_states[i]))
+            pose = pose_vec[i]
+            
+            quat = pin.Quaternion(pose.pose.orientation.w,
+                                  pose.pose.orientation.x, 
+                                  pose.pose.orientation.y,
+                                  pose.pose.orientation.z)
+            quat.normalize()
 
-                pose_matrix = np.eye(4)
-                pose_matrix[:3,:3] = r.as_matrix()
-                pose_matrix[0,3] = pose.pose.position.x
-                pose_matrix[1,3] = pose.pose.position.y
-                pose_matrix[2,3] = pose.pose.position.z
+            pose_matrix = np.eye(4)
+            pose_matrix[:3,:3] = quat.matrix()
+            pose_matrix[0,3] = pose.pose.position.x
+            pose_matrix[1,3] = pose.pose.position.y
+            pose_matrix[2,3] = pose.pose.position.z
 
-                kinematics = Kinematics()
-                kinematics.id = i
-                kinematics.pose = pose_matrix
-                kinematics.covariance = np.eye(6) * 0.01 #pose.covariance
+            kinematics = Kinematics()
+            kinematics.id = i
+            kinematics.pose = pose_matrix
+            kinematics.covariance = np.eye(6) * 0.001 #pose.covariance
 
-                kinematics_list.append(kinematics)
+            kinematics_list.append(kinematics)
 
-                #self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
-                #self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
+            #self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
+            #self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
         
         #self.get_logger().info('Contact list' + str(contact_list))
         self.filter.setContacts(contact_list)
         self.filter.correctKinematics(kinematics_list)
-        new_pose = self.filter.getState().getPosition()
-        #if len(kinematics_list) > 0:
-            #for i in range(len(kinematics_list)):
-                #new_c = self.filter.getState().getX()[:3,5+i]
-                #self.get_logger().info('World contact ' + str(i) + ' is ' + str(new_c))
+        #new_state = self.filter.getState()
+        #new_X = new_state.getX()
+        #for i in range(len(kinematics_list)):
+        #    new_X[2, 5 + i] = 0.023 
+        #new_state.setX(new_X)
+        #self.filter.setState(new_state)
         #self.get_logger().info('Correct kinematics ' + str(new_pose))
         """ if len(kinematics_list) > 0:
             exit() """
-        if np.isnan(new_pose[0]):
-            exit()
+        """ if np.isnan(new_pose[0]):
+            exit() """
 
 
 
@@ -215,13 +211,12 @@ class Inekf(Node):
         new_state = self.filter.getState()
         new_r = new_state.getRotation()
         new_p = new_state.getPosition()
-        new_v = new_state.getX()[0:3,3:4]
+        new_v = new_r.T @ new_state.getX()[0:3,3:4]
         #self.get_logger().info('imu measure ' + str(self.imu_measurement_prev))
         #self.get_logger().info('Position ' + str(new_p))
 
-        r = Rotation.from_matrix([[new_r[0][0], new_r[0][1], new_r[0][2]],
-                                  [new_r[1][0], new_r[1][1], new_r[1][2]],
-                                  [new_r[2][0], new_r[2][1], new_r[2][2]]])
+        quat = pin.Quaternion(new_r)
+        quat.normalize()
         
         # ROS2 transform
         self.transform_msg.transform.translation.x = new_p[0]
@@ -232,20 +227,16 @@ class Inekf(Node):
         self.odom_msg.pose.pose.position.y = new_p[1]
         self.odom_msg.pose.pose.position.z = new_p[2]
 
-        x,y,z,w = r.as_quat()
-        #print("RPY rotation:", r.as_euler("xyz",degrees=True))
-        quat = np.array([x,y,z,w])
-        #self.get_logger().info('new quat' + str(quat))
 
-        self.transform_msg.transform.rotation.x = x
-        self.transform_msg.transform.rotation.y = y
-        self.transform_msg.transform.rotation.z = z
-        self.transform_msg.transform.rotation.w = w 
+        self.transform_msg.transform.rotation.x = quat.x
+        self.transform_msg.transform.rotation.y = quat.y
+        self.transform_msg.transform.rotation.z = quat.z
+        self.transform_msg.transform.rotation.w = quat.w 
 
-        self.odom_msg.pose.pose.orientation.x = x
-        self.odom_msg.pose.pose.orientation.y = y
-        self.odom_msg.pose.pose.orientation.z = z
-        self.odom_msg.pose.pose.orientation.w = w 
+        self.odom_msg.pose.pose.orientation.x = quat.x
+        self.odom_msg.pose.pose.orientation.y = quat.y
+        self.odom_msg.pose.pose.orientation.z = quat.z
+        self.odom_msg.pose.pose.orientation.w = quat.w 
 
         self.odom_msg.twist.twist.linear.x = float(new_v[0])
         self.odom_msg.twist.twist.linear.y = float(new_v[1])

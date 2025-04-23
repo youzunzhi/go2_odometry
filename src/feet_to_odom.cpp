@@ -87,28 +87,28 @@ public:
         pose_msg.header.stamp = this->get_clock()->now();
 
         std::vector<geometry_msgs::msg::PoseWithCovariance> pose_list;
-        std::vector<std::string> name_list;
+        std::vector<bool> contact_states;
         for (std::size_t i = 0; i < 4; i++) {
-            if (f_contact_[i] > 10) {
-                name_list.push_back(foot_frame_names_[i]);
-                geometry_msgs::msg::PoseWithCovariance pose_foot;
-                pose_foot.covariance.fill(0);
+            if (f_contact_[i] > 20) contact_states.push_back(true);
+            else contact_states.push_back(false);
 
-                pose_foot.pose.position.x = bMf_list[i].translation()[0];
-                pose_foot.pose.position.y = bMf_list[i].translation()[1];
-                pose_foot.pose.position.z = bMf_list[i].translation()[2];
+            geometry_msgs::msg::PoseWithCovariance pose_foot;
+            pose_foot.covariance.fill(0);
 
-                Eigen::Quaternion<double> quat(bMf_list[i].rotation());
-                
-                pose_foot.pose.orientation.x = quat.x();
-                pose_foot.pose.orientation.y = quat.y();
-                pose_foot.pose.orientation.z = quat.z();
-                pose_foot.pose.orientation.w = quat.w();
+            pose_foot.pose.position.x = bMf_list[i].translation()[0];
+            pose_foot.pose.position.y = bMf_list[i].translation()[1];
+            pose_foot.pose.position.z = bMf_list[i].translation()[2];
 
-                pose_list.push_back(pose_foot);
-            }
+            Eigen::Quaternion<double> quat(bMf_list[i].rotation());
+            
+            pose_foot.pose.orientation.x = quat.x();
+            pose_foot.pose.orientation.y = quat.y();
+            pose_foot.pose.orientation.z = quat.z();
+            pose_foot.pose.orientation.w = quat.w();
+
+            pose_list.push_back(pose_foot);
         }
-        pose_msg.feet_names = name_list;
+        pose_msg.contact_states = contact_states;
         pose_msg.pose_vec = pose_list;
 
         pos_feet_publisher_->publish(pose_msg);
