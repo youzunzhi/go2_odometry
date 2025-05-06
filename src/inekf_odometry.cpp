@@ -123,27 +123,18 @@ public:
         std::vector<std::pair<int, bool>> contact_list;
         inekf::vectorKinematics kinematics_list;
 
-        Eigen::Quaternion<double> q;
-        Eigen::Vector3d p;
-        Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
-        Eigen::Matrix<double, 6, 6> covariance;
-        covariance = Eigen::MatrixXd::Identity(6, 6) * 0.0001;
+        Eigen::Vector3d position = Eigen::Vector3d::Zero();
+        Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
+        Eigen::Matrix3d covariance = Eigen::Matrix3d::Identity() * 0.0001;
+        Eigen::Matrix3d covariance_vel = Eigen::Matrix3d::Identity() * 0.0001;
 
         for (std::size_t i = 0; i < foot_frame_names_.size(); ++i) {
             contact_list.push_back(std::pair<int, bool>(i, msg->contact_states[i]));
             
-            q = Eigen::Quaternion<double>(msg->pose_vec[i].pose.orientation.x, 
-                msg->pose_vec[i].pose.orientation.y,
-                msg->pose_vec[i].pose.orientation.z,
-                msg->pose_vec[i].pose.orientation.w
-            );
-            q.normalize();
-            p << msg->pose_vec[i].pose.position.x, msg->pose_vec[i].pose.position.y, msg->pose_vec[i].pose.position.z;
-            pose.block<3, 3>(0, 0) = q.toRotationMatrix();
-            pose.block<3, 1>(0, 3) = p;
+            position << msg->pose_vec[i].pose.position.x, msg->pose_vec[i].pose.position.y, msg->pose_vec[i].pose.position.z;
 
-            inekf::Kinematics frame(i, pose, covariance);
-                kinematics_list.push_back(frame);
+            inekf::Kinematics frame(i, position, covariance, velocity, covariance_vel);
+            kinematics_list.push_back(frame);
         }
         auto new_state = filter_->getState();
         filter_->setContacts(contact_list);

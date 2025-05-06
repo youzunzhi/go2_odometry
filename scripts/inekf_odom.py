@@ -129,16 +129,19 @@ class Inekf(Node):
                                   pose.pose.orientation.z)
             quat.normalize()
 
-            pose_matrix = np.eye(4)
-            pose_matrix[:3,:3] = quat.matrix()
-            pose_matrix[0,3] = pose.pose.position.x
-            pose_matrix[1,3] = pose.pose.position.y
-            pose_matrix[2,3] = pose.pose.position.z
+            translation = np.zeros(3)
+            translation[0] = pose.pose.position.x
+            translation[1] = pose.pose.position.y
+            translation[2] = pose.pose.position.z
+
+            velocity = np.zeros(3)
 
             kinematics = Kinematics()
             kinematics.id = i
-            kinematics.pose = pose_matrix
-            kinematics.covariance = np.eye(6) * 0.001 #pose.covariance
+            kinematics.position = translation
+            kinematics.velocity = velocity
+            kinematics.covariance = np.eye(3) * 0.001 #pose.covariance
+            kinematics.covariance_vel = np.eye(3) * 0.001 #pose.covariance
 
             kinematics_list.append(kinematics)
 
