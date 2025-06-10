@@ -20,6 +20,8 @@ find_package(builtin_interfaces REQUIRED)
 find_package(go2_description REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+unset(PYTHON_SOABI)
+
 # Build msgs
 set(msg_files
   "msg/OdometryVector.msg"
