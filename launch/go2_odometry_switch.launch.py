@@ -9,7 +9,7 @@ def generate_launch_description():
 
     odom_type_arg = DeclareLaunchArgument(
         'odom_type',
-        default_value='use_inekf_odom',
+        default_value='use_full_odom',
         description='Type of odometry desired between : fake, mocap'
     )
 
@@ -90,7 +90,7 @@ def generate_launch_description():
         IncludeLaunchDescription
         (
             PythonLaunchDescriptionSource([full_state_publisher_launch_file]),
-            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'use_inekf_odom'"]))
+            condition=IfCondition(PythonExpression(["'",LaunchConfiguration('odom_type'),"' == 'use_full_odom'"]))
         )
 
 ])
