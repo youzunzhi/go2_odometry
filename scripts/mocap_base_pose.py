@@ -24,7 +24,7 @@ class MocapOdometryNode(Node):
         # ros2 parameters ======================================================
         self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("wanted_body","Go2") # go2, cube or None
-        self.declare_parameter("qualisys_ip","192.168.75.2")
+        self.declare_parameter("qualisys_ip","128.93.64.222")
         self.declare_parameter("publishing_freq",110)     # in Hz : due to the discretisation the frequency may be slightly lower than what is it set to. Max limit of 300Hz (set in MoCap software)
         self.declare_parameter("mimic_go2_odometry",0)
         self.mocap_as_pose_estimate = bool(self.get_parameter("mimic_go2_odometry").value)
@@ -70,7 +70,7 @@ class MocapOdometryNode(Node):
         if connection is None:
             self.get_logger().error("Could not connect to the Motion Capture")
             #! for now the node does not destroy itself when failing to connect
-            self.destroy_node() #! to check
+            self.destroy_node()
             return      
         
         xml_string = await connection.get_parameters(parameters=['6d'])
