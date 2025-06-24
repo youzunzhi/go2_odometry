@@ -9,7 +9,7 @@ from geometry_msgs.msg import PoseWithCovariance
 
 import numpy as np
 import pinocchio as pin
-from go2_description import loadGo2
+from go2_description.loader import loadGo2
 
 class FeetToOdom(Node):
 
