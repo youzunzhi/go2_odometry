@@ -9,7 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from nav_msgs.msg import Odometry
 import pinocchio as pin
-from go2_description import loadGo2
+from go2_description.loader import loadGo2
 
 from unitree_go.msg import LowState
 from tf2_ros import TransformBroadcaster
