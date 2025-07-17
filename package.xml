@@ -3,8 +3,8 @@
 <package format="3">
   <name>go2_odometry</name>
   <version>0.0.0</version>
-  <description>State estimation for Go2 robot using robot_localization package</description>
-  <maintainer email="earlaud@todo.todo">earlaud</maintainer>
+  <description>State estimation for Go2 robot mainly using invariant extended kalmann filters</description>
+  <maintainer email="earlaud@inria.fr">earlaud</maintainer>
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
