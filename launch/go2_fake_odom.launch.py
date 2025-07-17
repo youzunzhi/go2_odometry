@@ -7,32 +7,25 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-
-    minimal_state_publisher_launch_file = PathJoinSubstitution([
-                                    FindPackageShare('go2_odometry'),
-                                    'launch',
-                                    'go2_state_publisher.launch.py'
-                                  ])
-
-    fake_odom_base_height_arg = DeclareLaunchArgument(
-                        'base_height',
-                        default_value=TextSubstitution(text='0.30'),
-                        description='[IF FAKE ODOM] Height of the robot base.'
+    minimal_state_publisher_launch_file = PathJoinSubstitution(
+        [FindPackageShare("go2_odometry"), "launch", "go2_state_publisher.launch.py"]
     )
 
-    return LaunchDescription([
+    fake_odom_base_height_arg = DeclareLaunchArgument(
+        "base_height",
+        default_value=TextSubstitution(text="0.30"),
+        description="[IF FAKE ODOM] Height of the robot base.",
+    )
 
-        Node(
-            package="go2_odometry",
-            executable="fake_odom.py",
-            name='fake_odom',
-            parameters=[{
-            "base_height": LaunchConfiguration('base_height')
-        }]
-        ),
-
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([minimal_state_publisher_launch_file])
-
-        )
-])
+    return LaunchDescription(
+        [
+            fake_odom_base_height_arg,
+            Node(
+                package="go2_odometry",
+                executable="fake_odom.py",
+                name="fake_odom",
+                parameters=[{"base_height": LaunchConfiguration("base_height")}],
+            ),
+            IncludeLaunchDescription(PythonLaunchDescriptionSource([minimal_state_publisher_launch_file])),
+        ]
+    )

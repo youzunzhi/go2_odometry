@@ -82,7 +82,7 @@ Connects to a Qualisys Motion Capture and converts the data recevied in the expe
 By default the node launches:
 **go2_state_publisher.launch.py** (detailled further down).
 
-##### go2_odometry/mocap_base_pose.py 
+##### go2_odometry/mocap_base_pose.py
 Node charged of the communication with the Qualisys Motion Capture system.
 
 Published topics:
@@ -91,7 +91,7 @@ Published topics:
 
 Ros parameters :
 - `base_frame` (default: 'base') : name of the robot base frame
-- `odom_frame` (default: 'odom') : name of the fixed frame 
+- `odom_frame` (default: 'odom') : name of the fixed frame
 - `wanted_body` (default: 'Go2') : name of the object to be tracked in the motion capture software
 - `qualisys_ip` (default: 192.168.75.2) : IP used to communicate with the motion capture software
 - `publishing_freq` (default: 110) : publishing frequency of the transform & odometry topics
@@ -102,7 +102,7 @@ Ros parameters :
 >```bash
 >ros2 launch go2_odometry go2_mocap.launch.py mimic_go2_odometry:=0
 >```
->The parameter `mimic_go2_odometry` changes the behavior of the node so that it can be used as a ground truth publisher.  
+>The parameter `mimic_go2_odometry` changes the behavior of the node so that it can be used as a ground truth publisher.
 >What changes is:
 >- **go2_state_publisher.launch.py** is not launched
 >- **go2_odometry/mocap_base_pose.py** is launched but :
@@ -125,7 +125,7 @@ Published topics:
 
 Takes several ros parameters :
 - base_frame (default: 'base') : name of the robot base frame
-- odom_frame (default: 'odom') : name of the fixed frame 
+- odom_frame (default: 'odom') : name of the fixed frame
 - base_height (default: 0.30) : height of the robot base frame
 
 
@@ -151,4 +151,3 @@ Standard ros node that listens to `/joint_states` topic and publishes TF transfo
 Published topics:
 * `/tf` and `/tf_static`: Link relative positions, populated from `/joint_states`.
 * `/robot_description`:  topic for other nodes to get the urdf of the robot.
-

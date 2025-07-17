@@ -1,7 +1,7 @@
 Motion Capture Instructions
 ==
 > [!NOTE]
-> The photos and 3D models are stored using git lfs. If you want to get the files on your PC you will need to install git lfs and run  `git lfs pull` . 
+> The photos and 3D models are stored using git lfs. If you want to get the files on your PC you will need to install git lfs and run  `git lfs pull` .
 
 ## Software setup
 
@@ -9,14 +9,14 @@ Motion Capture Instructions
 Running the mocap script requires adding two more packages to your local installation:
 ```bash
 # PyKDL for rotation conversions
-conda install python-orocos-kdl 
+conda install python-orocos-kdl
 
 # Qualisys Realtime package
 python -m pip install pip --upgrade # Upgrade to latest pip
 python -m pip install qtm-rt
 ```
 
-#### Configuration of the 6 DOF body 
+#### Configuration of the 6 DOF body
 The parameters for the 6 DOF body to be tracked need to be added to the **Qualisys Track Manager** software (that should normally be present and running in the PC physically connected to the mocap cameras).
 
 The settings for the rigid body can be found in the file **[ressources/Go2-QTM-Body.xml](Go2-QTM-Body.xml)** and can be loaded in the qualisys software by going to *setting panels* -> *6DOF tracking* -> *Load Bodies*.
@@ -33,7 +33,7 @@ All parts are 3D printed using PLA and the markers are secured using double side
 ### Parts
 
 #### Helmet
- 
+
 
 | ![](photos/image-1736521381091.png?raw=1) | ![](photos/image-1736521391096.png?raw=1) |
 | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- |
@@ -106,4 +106,3 @@ No special precautions
 ##### Modifying
 
 No special precautions
-

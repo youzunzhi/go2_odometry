@@ -11,17 +11,13 @@ import numpy as np
 import pinocchio as pin
 from go2_description.loader import loadGo2
 
+
 class FeetToOdom(Node):
-
     def __init__(self):
-        super().__init__('feet_to_odom')
+        super().__init__("feet_to_odom")
 
-        self.pos_publisher = self.create_publisher(OdometryVector, 'odometry/feet_pos', 10)
-        self.subscription = self.create_subscription(
-            LowState,
-            '/lowstate',
-            self.listener_callback,
-            10)
+        self.pos_publisher = self.create_publisher(OdometryVector, "odometry/feet_pos", 10)
+        self.subscription = self.create_subscription(LowState, "/lowstate", self.listener_callback, 10)
 
         robot = loadGo2()
         self.rmodel = robot.model
@@ -32,10 +28,12 @@ class FeetToOdom(Node):
         self.initialize_pose = True
 
     def _unitree_to_urdf_vec(self, vec):
+        # fmt: off
         return  [vec[3],  vec[4],  vec[5],
                  vec[0],  vec[1],  vec[2],
                  vec[9],  vec[10], vec[11],
                  vec[6],  vec[7],  vec[8],]
+        # fmt: on
 
     def listener_callback(self, state_msg):
         # Get sensor measurement
@@ -44,13 +42,13 @@ class FeetToOdom(Node):
         fc_unitree = state_msg.foot_force
 
         # Rearrange joints according to urdf
-        q = np.array([0]*6 + [1] + self._unitree_to_urdf_vec(q_unitree))
-        v = np.array([0]*6 + self._unitree_to_urdf_vec(v_unitree))
+        q = np.array([0] * 6 + [1] + self._unitree_to_urdf_vec(q_unitree))
+        v = np.array([0] * 6 + self._unitree_to_urdf_vec(v_unitree))
         f_contact = [fc_unitree[i] for i in [1, 0, 3, 2]]
 
         if np.min(f_contact) > 30:
             self.initialize_pose = False
-            #self.get_logger().info('Initialization over')
+            # self.get_logger().info('Initialization over')
 
         # Compute positions and velocities
         ## f = foot, i = imu, b = base
@@ -65,15 +63,15 @@ class FeetToOdom(Node):
         pos_list = []
         feet_list = []
         for i in range(4):
-            if(f_contact[i] >= 20 or self.initialize_pose):
+            if f_contact[i] >= 20 or self.initialize_pose:
                 feet_list.append(True)
             else:
                 feet_list.append(False)
             pose_foot = PoseWithCovariance()
-            
-            Jc = pin.getFrameJacobian(self.rmodel, self.rdata, self.foot_frame_id[i], pin.LOCAL)[:3,6:]
+
+            Jc = pin.getFrameJacobian(self.rmodel, self.rdata, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
             cov_pose = Jc @ np.eye(12) * 1e-3 @ Jc.transpose()
-            pose_foot.covariance = [0.] * 36
+            pose_foot.covariance = [0.0] * 36
             pose_foot.covariance[:9] = cov_pose.flatten().tolist()
 
             pose_foot.pose.position.x = bMf_list[i].translation[0]
@@ -82,7 +80,7 @@ class FeetToOdom(Node):
 
             quat = pin.Quaternion(bMf_list[i].rotation)
             quat.normalize()
-            
+
             pose_foot.pose.orientation.x = quat.x
             pose_foot.pose.orientation.y = quat.y
             pose_foot.pose.orientation.z = quat.z
@@ -94,6 +92,7 @@ class FeetToOdom(Node):
         pos_msg.pose_vec = pos_list
 
         self.pos_publisher.publish(pos_msg)
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -109,5 +108,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
