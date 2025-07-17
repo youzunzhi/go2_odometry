@@ -35,7 +35,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 add_executable(state_converter_node src/go2_state_converter_node.cpp)
 ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
 
-rosidl_target_interfaces(state_converter_node 
+rosidl_target_interfaces(state_converter_node
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 install(TARGETS

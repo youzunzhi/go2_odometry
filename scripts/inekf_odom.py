@@ -13,35 +13,26 @@ import pinocchio as pin
 from sensor_msgs.msg import Imu
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
-from inekf import (
-    RobotState,
-    NoiseParams,
-    InEKF,
-    Kinematics
-)
+from inekf import RobotState, NoiseParams, InEKF, Kinematics
+
 
 # ==============================================================================
 # Main Class
 # ==============================================================================
 class Inekf(Node):
-
     def __init__(self):
-        super().__init__('inekf')
+        super().__init__("inekf")
         print("==GO2 InEKF launched==")
         # ROS2 =================================================================
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
-        
+
         qos_profile_keeplast = QoSProfile(history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
-        self.pos_feet_subscriber = self.create_subscription(OdometryVector,
-                                                            'odometry/feet_pos', 
-                                                            self.listener_feet_callback,
-                                                            qos_profile_keeplast)
-        self.imu_subscription = self.create_subscription(Imu,
-                                                        '/imu',
-                                                        self.listener_callback,
-                                                        qos_profile_keeplast)
-        
+        self.pos_feet_subscriber = self.create_subscription(
+            OdometryVector, "odometry/feet_pos", self.listener_feet_callback, qos_profile_keeplast
+        )
+        self.imu_subscription = self.create_subscription(Imu, "/imu", self.listener_callback, qos_profile_keeplast)
+
         self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", qos_profile_keeplast)
         self.tf_broadcaster = TransformBroadcaster(self)
         self.transform_msg = TransformStamped()
@@ -49,45 +40,41 @@ class Inekf(Node):
 
         self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
         self.foot_frame_ids = [0, 1, 2, 3]
-        
+
         # Filter and global variables ==========================================
         self.DT_MIN = 1e-6
         self.DT_MAX = 1
         self.dt = 0
-
 
         # Data from go2 ========================================================
         self.imu_measurement = np.zeros(6)
         self.imu_measurement_prev = np.zeros(6)
         self.quaternion_measurement = np.zeros(4)
         self.feet_contacts = np.zeros(4)
-        self.contacts={0:False,
-                       1:False,
-                       2:False,
-                       3:False}
-        
-        self.joints_unitree_2_urdf = [1,0,3,2] # index = urdf convention, value = unitree joint numbering
-        
-        self.estimated_contact_positions = {0:0, #! not sure if correct
-                                                1:0,
-                                                2:0,
-                                                3:0}
-        
+        self.contacts = {0: False, 1: False, 2: False, 3: False}
+
+        self.joints_unitree_2_urdf = [1, 0, 3, 2]  # index = urdf convention, value = unitree joint numbering
+
+        self.estimated_contact_positions = {
+            0: 0,  #! not sure if correct
+            1: 0,
+            2: 0,
+            3: 0,
+        }
+
         # double = float in python
-        self.t : float = 0
-        self.t_prev : float = 0
+        self.t: float = 0
+        self.t_prev: float = 0
 
         # Invariant EKF
         initial_state = RobotState()
 
-        R0 = np.array([[1, 0, 0],
-               [0, 1, 0],
-               [0, 0, 1]]) # Initial rotation 
-        
-        v0 = np.zeros(3) # initial velocity
-        p0 = np.array([0, 0, 0.07]) # initial position in simulation
-        bg0 = np.zeros(3) # initial gyroscope bias
-        ba0 = np.zeros(3) # initial accelerometer bias
+        R0 = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])  # Initial rotation
+
+        v0 = np.zeros(3)  # initial velocity
+        p0 = np.array([0, 0, 0.07])  # initial position in simulation
+        bg0 = np.zeros(3)  # initial gyroscope bias
+        ba0 = np.zeros(3)  # initial accelerometer bias
         gravity = np.array([0, 0, -9.81])
 
         initial_state.setRotation(R0)
@@ -108,23 +95,22 @@ class Inekf(Node):
         self.filter.setGravity(gravity)
 
     def listener_feet_callback(self, state_msg):
-        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9 
+        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9
 
         pose_vec = state_msg.pose_vec
         contact_states = state_msg.contact_states
-        #self.get_logger().info('Feet in contact ' + str(state_msg.feet_names))
-        
+        # self.get_logger().info('Feet in contact ' + str(state_msg.feet_names))
+
         contact_list = []
         kinematics_list = []
 
         for i in range(len(self.foot_frame_name)):
             contact_list.append((i, contact_states[i]))
             pose = pose_vec[i]
-            
-            quat = pin.Quaternion(pose.pose.orientation.w,
-                                  pose.pose.orientation.x, 
-                                  pose.pose.orientation.y,
-                                  pose.pose.orientation.z)
+
+            quat = pin.Quaternion(
+                pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z
+            )
             quat.normalize()
 
             translation = np.zeros(3)
@@ -134,26 +120,25 @@ class Inekf(Node):
 
             contact_cov = pose.covariance[:9]
             contact_cov = np.squeeze(contact_cov)
-            contact_cov = contact_cov.reshape(3,3)
+            contact_cov = contact_cov.reshape(3, 3)
 
             velocity = np.zeros(3)
 
             kinematics = Kinematics(i, translation, contact_cov, velocity, np.eye(3) * 0.001)
             kinematics_list.append(kinematics)
 
-            #self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
-            #self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
-        
-        #self.get_logger().info('Contact list' + str(contact_list))
+            # self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
+            # self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
+
+        # self.get_logger().info('Contact list' + str(contact_list))
         self.filter.setContacts(contact_list)
         self.filter.correctKinematics(kinematics_list)
 
-
     def listener_callback(self, state_msg):
         # TODO verify if timestamp can be used as time
-        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9 
+        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9
         self.dt = self.t - self.t_prev
-    
+
         # IMU measurement - used for propagation ===============================
         #! gyroscope meas in filter are radians
         self.imu_measurement[0] = state_msg.angular_velocity.x
@@ -165,8 +150,8 @@ class Inekf(Node):
         self.imu_measurement[5] = state_msg.linear_acceleration.z
 
         # breakpoint()
-        if(self.dt > self.DT_MIN and self.dt < self.DT_MAX):
-            #propagate using previous measurement
+        if self.dt > self.DT_MIN and self.dt < self.DT_MAX:
+            # propagate using previous measurement
             self.propagate()
 
         # KINEMATIC data =======================================================
@@ -176,7 +161,6 @@ class Inekf(Node):
         self.quaternion_measurement[3] = state_msg.orientation.w
         # TODO normalize quaternion && find quat type
 
-
         # TODO: add feet vel and feet pos (additionnal info on base)
         self.t_prev = self.t
         self.imu_measurement_prev = self.imu_measurement
@@ -185,26 +169,26 @@ class Inekf(Node):
         # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
         timestamp = self.get_clock().now().to_msg()
         self.transform_msg.header.stamp = timestamp
-        self.transform_msg.child_frame_id = "base" #self.get_parameter("base_frame").value
-        self.transform_msg.header.frame_id = "odom" #self.get_parameter("odom_frame").value
+        self.transform_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
+        self.transform_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
 
         self.odom_msg.header.stamp = timestamp
-        self.odom_msg.child_frame_id = "base" #self.get_parameter("base_frame").value
-        self.odom_msg.header.frame_id = "odom" #self.get_parameter("odom_frame").value
-        
+        self.odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
+        self.odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
+
         self.filter.propagate(self.imu_measurement_prev, self.dt)
-        
+
         new_state = self.filter.getState()
         new_r = new_state.getRotation()
         new_p = new_state.getPosition()
-        new_v = new_r.T @ new_state.getX()[0:3,3:4]
+        new_v = new_r.T @ new_state.getX()[0:3, 3:4]
         new_v = new_v.reshape(-1)
-        #self.get_logger().info('imu measure ' + str(self.imu_measurement_prev))
-        #self.get_logger().info('Position ' + str(new_p))
+        # self.get_logger().info('imu measure ' + str(self.imu_measurement_prev))
+        # self.get_logger().info('Position ' + str(new_p))
 
         quat = pin.Quaternion(new_r)
         quat.normalize()
-        
+
         # ROS2 transform
         self.transform_msg.transform.translation.x = new_p[0]
         self.transform_msg.transform.translation.y = new_p[1]
@@ -214,16 +198,15 @@ class Inekf(Node):
         self.odom_msg.pose.pose.position.y = new_p[1]
         self.odom_msg.pose.pose.position.z = new_p[2]
 
-
         self.transform_msg.transform.rotation.x = quat.x
         self.transform_msg.transform.rotation.y = quat.y
         self.transform_msg.transform.rotation.z = quat.z
-        self.transform_msg.transform.rotation.w = quat.w 
+        self.transform_msg.transform.rotation.w = quat.w
 
         self.odom_msg.pose.pose.orientation.x = quat.x
         self.odom_msg.pose.pose.orientation.y = quat.y
         self.odom_msg.pose.pose.orientation.z = quat.z
-        self.odom_msg.pose.pose.orientation.w = quat.w 
+        self.odom_msg.pose.pose.orientation.w = quat.w
 
         self.odom_msg.twist.twist.linear.x = new_v[0]
         self.odom_msg.twist.twist.linear.y = new_v[1]
@@ -232,24 +215,22 @@ class Inekf(Node):
         self.odom_msg.twist.twist.angular.x = self.imu_measurement_prev[0]
         self.odom_msg.twist.twist.angular.y = self.imu_measurement_prev[1]
         self.odom_msg.twist.twist.angular.z = self.imu_measurement_prev[2]
-        
 
         self.tf_broadcaster.sendTransform(self.transform_msg)
         self.odom_publisher.publish(self.odom_msg)
 
-
     # Attributes ===============================================================
 
-    estimated_landmarks = {} # int:int
-    contacts = {} # int:bool
-    estimated_contact_positions = {} # int:int
+    estimated_landmarks = {}  # int:int
+    contacts = {}  # int:bool
+    estimated_contact_positions = {}  # int:int
 
 
 def main(args=None):
     rclpy.init(args=args)
 
     inekf_node = Inekf()
-    
+
     rclpy.spin(inekf_node)
 
     # Destroy the node explicitly
@@ -259,5 +240,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
