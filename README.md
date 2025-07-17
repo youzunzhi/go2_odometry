@@ -2,7 +2,7 @@ Go2 Odometry
 ===
 
 ## Summary
-Provide a simple state estimation for the unitree Go2 robot, via the [robot_localization](http://docs.ros.org/en/melodic/api/robot_localization/html/index.html) package.
+Provide a simple state estimation for the unitree Go2 robot, via the [invariant-ekf](https://github.com/inria-paris-robotics-lab/invariant-ekf) package.
 It also provides a simple node to convert unitree custom messages into "standard" ros messages and re-publish them on separate topics.
 
 
@@ -15,13 +15,13 @@ It also provides a simple node to convert unitree custom messages into "standard
 "Main" launch file that takes a `mocap_type` argument to select between odometry sources.
 The choices are : `use_full_odom` (default), `fake`, `mocap`
 
-Command: 
+Command:
 ```bash
 ros2 launch go2_odometry go2_odometry_switch.launch.py odom_type:=<your choice>
 ```
 
 - `mocap_type:=use_full_odom`
-Calls the **go2_state_publisher.launch.py** launch file.
+Calls the **go2_inekf_odometry.launch.py** launch file.
 
 - `mocap_type:=fake`
 Calls the **go2_fake_odom.launch.py** file.
@@ -40,30 +40,30 @@ Details on each parameter are given in the launchfile description below.
 
 ---
 
-### go2_full_odometry.launch.py
+### go2_inekf_odometry.launch.py
 This file launches **go2_state_publisher.launch.py** detailled further down.
 The other nodes launched are:
 
-##### robot_localization/ekf_node
-A standard ros2 node for running basic Extended Kalman Filters.
+##### go2_odometry/inekf_odom.py
+A ros node connecting the [invariant extended kalman filter library](https://github.com/inria-paris-robotics-lab/invariant-ekf) to topics.
 
-This Kalman is tuned to listen to:
+This Kalman listen to:
 * `/imu`: published in this case by the **go2_state_converter** node.
 * `/tf`: populated in this case by the **robot_state_publisher** node.
-* `/odometry/feet_pos` and `/odometry/feet_vel`: for XY speed and Z correction of the estimate. (See next node)
+* `/odometry/feet_pos`: feet poses and contact sensor used to correct the estimate using the kinematics of the robot. (See next node)
 
 It then publishes on:
 * `/tf`: The floating base pose estimation
 * `/odometry/filtered`: The same pose estimate with covariances.
 
-##### go2_odometry/feet_to_odom.py
-Runs an inverse kinematics calculation on the robot joints to get a height estimate and a XY velocity estimate (assuming the feet are sticking to the ground).
+##### go2_odometry/feet_to_odom_inekf.py
+Runs an inverse kinematics calculation on the robot joints to get foot pose. It also compute the jacobians to set covariance matrix appropriately.
 
 This node subscribes to:
-* `unitree_ros2/LowState`: For joint configuration and velocity, as-well as for **foot_force** to determine if the foot is in contact with the ground.
+* `unitree_ros2/LowState`: To get joint configuration and **foot_force** to determine if the foot is in contact with the ground or not.
 
 It the publishes on:
-*`/odometry/feet_pos` and `/odometry/feet_vel`: For the ekf node to consume.
+*`/odometry/feet_pos`: For the inekf node to consume.
 
 ---
 ### go2_mocap.launch.py
