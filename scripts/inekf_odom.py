@@ -41,29 +41,15 @@ class Inekf(Node):
         self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", 1)
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        # Data from go2 ========================================================
-        self.joints_unitree_2_urdf = [1, 0, 3, 2]  # index = urdf convention, value = unitree joint numbering
-
-        # double = float in python
-        self.t: float = 0
-        self.t_prev: float = 0
-
         # Invariant EKF
-        initial_state = RobotState()
-
-        R0 = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])  # Initial rotation
-
-        v0 = np.zeros(3)  # initial velocity
-        p0 = np.array([0, 0, 0.07])  # initial position in simulation
-        bg0 = np.zeros(3)  # initial gyroscope bias
-        ba0 = np.zeros(3)  # initial accelerometer bias
         gravity = np.array([0, 0, -9.81])
 
-        initial_state.setRotation(R0)
-        initial_state.setVelocity(v0)
-        initial_state.setPosition(p0)
-        initial_state.setGyroscopeBias(bg0)
-        initial_state.setAccelerometerBias(ba0)
+        initial_state = RobotState()
+        initial_state.setRotation(np.eye(3))
+        initial_state.setVelocity(np.zeros(3))
+        initial_state.setPosition(np.zeros(3))
+        initial_state.setGyroscopeBias(np.zeros(3))
+        initial_state.setAccelerometerBias(np.zeros(3))
 
         # Initialize state covariance
         noise_params = NoiseParams()
