@@ -5,7 +5,6 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 
-from rclpy.qos import QoSProfile
 from nav_msgs.msg import Odometry
 from unitree_go.msg import LowState
 import pinocchio as pin
@@ -31,23 +30,16 @@ class Inekf(Node):
         ).value
         self.dt = 1.0 / robot_fq
 
-        robot = loadGo2()
-        self.rmodel = robot.model
-        self.rdata = self.rmodel.createData()
+        # Load robot model
+        self.robot = loadGo2()
         self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
-        self.foot_frame_id = [self.rmodel.getFrameId(frame_name) for frame_name in self.foot_frame_name]
-        self.imu_frame_id = self.rmodel.getFrameId("imu")
+        self.foot_frame_id = [self.robot.model.getFrameId(frame_name) for frame_name in self.foot_frame_name]
+        self.imu_frame_id = self.robot.model.getFrameId("imu")
 
+        # In/Out topics
         self.lowstate_subscription = self.create_subscription(LowState, "/lowstate", self.listener_callback, 10)
-
-        qos_profile_keeplast = QoSProfile(history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
-        self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", qos_profile_keeplast)
+        self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", 1)
         self.tf_broadcaster = TransformBroadcaster(self)
-        self.transform_msg = TransformStamped()
-        self.odom_msg = Odometry()
-
-        self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
-        self.foot_frame_ids = [0, 1, 2, 3]
 
         # Data from go2 ========================================================
         self.joints_unitree_2_urdf = [1, 0, 3, 2]  # index = urdf convention, value = unitree joint numbering
@@ -131,9 +123,9 @@ class Inekf(Node):
         f_pin = [f_unitree[i] for i in [1, 0, 3, 2]]
 
         # Compute positions and velocities
-        pin.forwardKinematics(self.rmodel, self.rdata, q_pin, v_pin)
-        pin.updateFramePlacements(self.rmodel, self.rdata)
-        pin.computeJointJacobians(self.rmodel, self.rdata)
+        pin.forwardKinematics(self.robot.model, self.robot.data, q_pin, v_pin)
+        pin.updateFramePlacements(self.robot.model, self.robot.data)
+        pin.computeJointJacobians(self.robot.model, self.robot.data)
 
         # Make message
         contact_list = []
@@ -145,9 +137,9 @@ class Inekf(Node):
             else:
                 contact_list.append(False)
 
-            pose_list.append(self.rdata.oMf[self.foot_frame_id[i]])
+            pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
 
-            Jc = pin.getFrameJacobian(self.rmodel, self.rdata, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
+            Jc = pin.getFrameJacobian(self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
             cov_pose = Jc @ np.eye(12) * 1e-3 @ Jc.transpose()
             covariance_list.append(cov_pose)
 
@@ -155,6 +147,8 @@ class Inekf(Node):
 
     def publish_state(self, filter_state, twist_angular_vel):
         # Get filter state
+        timestamp = self.get_clock().now().to_msg()
+
         state_rotation = filter_state.getRotation()
         state_position = filter_state.getPosition()
         state_velocity = state_rotation.T @ filter_state.getX()[0:3, 3:4]
@@ -163,45 +157,47 @@ class Inekf(Node):
         state_quaternion = pin.Quaternion(state_rotation)
         state_quaternion.normalize()
 
-        # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
-        timestamp = self.get_clock().now().to_msg()
-        self.transform_msg.header.stamp = timestamp
-        self.transform_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
-        self.transform_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
+        # TF2 messages
+        transform_msg = TransformStamped()
+        transform_msg.header.stamp = timestamp
+        transform_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
+        transform_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
 
-        self.odom_msg.header.stamp = timestamp
-        self.odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
-        self.odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
+        transform_msg.transform.translation.x = state_position[0]
+        transform_msg.transform.translation.y = state_position[1]
+        transform_msg.transform.translation.z = state_position[2]
 
-        # ROS2 transform
-        self.transform_msg.transform.translation.x = state_position[0]
-        self.transform_msg.transform.translation.y = state_position[1]
-        self.transform_msg.transform.translation.z = state_position[2]
+        transform_msg.transform.rotation.x = state_quaternion.x
+        transform_msg.transform.rotation.y = state_quaternion.y
+        transform_msg.transform.rotation.z = state_quaternion.z
+        transform_msg.transform.rotation.w = state_quaternion.w
 
-        self.odom_msg.pose.pose.position.x = state_position[0]
-        self.odom_msg.pose.pose.position.y = state_position[1]
-        self.odom_msg.pose.pose.position.z = state_position[2]
+        self.tf_broadcaster.sendTransform(transform_msg)
 
-        self.transform_msg.transform.rotation.x = state_quaternion.x
-        self.transform_msg.transform.rotation.y = state_quaternion.y
-        self.transform_msg.transform.rotation.z = state_quaternion.z
-        self.transform_msg.transform.rotation.w = state_quaternion.w
+        # Odometry topic
+        odom_msg = Odometry()
+        odom_msg.header.stamp = timestamp
+        odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
+        odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
 
-        self.odom_msg.pose.pose.orientation.x = state_quaternion.x
-        self.odom_msg.pose.pose.orientation.y = state_quaternion.y
-        self.odom_msg.pose.pose.orientation.z = state_quaternion.z
-        self.odom_msg.pose.pose.orientation.w = state_quaternion.w
+        odom_msg.pose.pose.position.x = state_position[0]
+        odom_msg.pose.pose.position.y = state_position[1]
+        odom_msg.pose.pose.position.z = state_position[2]
 
-        self.odom_msg.twist.twist.linear.x = state_velocity[0]
-        self.odom_msg.twist.twist.linear.y = state_velocity[1]
-        self.odom_msg.twist.twist.linear.z = state_velocity[2]
+        odom_msg.pose.pose.orientation.x = state_quaternion.x
+        odom_msg.pose.pose.orientation.y = state_quaternion.y
+        odom_msg.pose.pose.orientation.z = state_quaternion.z
+        odom_msg.pose.pose.orientation.w = state_quaternion.w
 
-        self.odom_msg.twist.twist.angular.x = float(twist_angular_vel[0])
-        self.odom_msg.twist.twist.angular.y = float(twist_angular_vel[1])
-        self.odom_msg.twist.twist.angular.z = float(twist_angular_vel[2])
+        odom_msg.twist.twist.linear.x = state_velocity[0]
+        odom_msg.twist.twist.linear.y = state_velocity[1]
+        odom_msg.twist.twist.linear.z = state_velocity[2]
 
-        self.tf_broadcaster.sendTransform(self.transform_msg)
-        self.odom_publisher.publish(self.odom_msg)
+        odom_msg.twist.twist.angular.x = float(twist_angular_vel[0])
+        odom_msg.twist.twist.angular.y = float(twist_angular_vel[1])
+        odom_msg.twist.twist.angular.z = float(twist_angular_vel[2])
+
+        self.odom_publisher.publish(odom_msg)
 
 
 def main(args=None):
