@@ -23,12 +23,11 @@ from go2_description.loader import loadGo2
 class Inekf(Node):
     def __init__(self):
         super().__init__("inekf")
-        print("==GO2 InEKF launched==")
-        # ROS2 =================================================================
+
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
         robot_fq = self.declare_parameter(
-            "robot_freq", 500.0, ParameterDescriptor(description="Fq at which the robot publish its state")
+            "robot_freq", 500.0, ParameterDescriptor(description="Frequency at which the robot publish its state")
         ).value
         self.dt = 1.0 / robot_fq
 
@@ -51,20 +50,7 @@ class Inekf(Node):
         self.foot_frame_ids = [0, 1, 2, 3]
 
         # Data from go2 ========================================================
-        self.imu_measurement = np.zeros(6)
-        self.imu_measurement_prev = np.zeros(6)
-        self.quaternion_measurement = np.zeros(4)
-        self.feet_contacts = np.zeros(4)
-        self.contacts = {0: False, 1: False, 2: False, 3: False}
-
         self.joints_unitree_2_urdf = [1, 0, 3, 2]  # index = urdf convention, value = unitree joint numbering
-
-        self.estimated_contact_positions = {
-            0: 0,  #! not sure if correct
-            1: 0,
-            2: 0,
-            3: 0,
-        }
 
         # double = float in python
         self.t: float = 0
@@ -99,26 +85,13 @@ class Inekf(Node):
         self.filter.setGravity(gravity)
 
     def listener_callback(self, msg):
-        # IMU measurement - used for propagation ===============================
-        #! gyroscope meas in filter are radians
-        self.imu_measurement[0] = msg.imu_state.gyroscope[0]  # x
-        self.imu_measurement[1] = msg.imu_state.gyroscope[1]  # y
-        self.imu_measurement[2] = msg.imu_state.gyroscope[2]  # z
+        # Format IMU measurements
+        imu_state = np.concatenate([msg.imu_state.gyroscope, msg.imu_state.accelerometer])
 
-        self.imu_measurement[3] = msg.imu_state.accelerometer[0]  # x
-        self.imu_measurement[4] = msg.imu_state.accelerometer[1]  # y
-        self.imu_measurement[5] = msg.imu_state.accelerometer[2]  # z
+        # Propagate filter
+        self.filter.propagate(imu_state, self.dt)
 
-        self.propagate()
-
-        # KINEMATIC data =======================================================
-        self.quaternion_measurement[0] = msg.imu_state.quaternion[1]  # x
-        self.quaternion_measurement[1] = msg.imu_state.quaternion[2]  # y
-        self.quaternion_measurement[2] = msg.imu_state.quaternion[3]  # z
-        self.quaternion_measurement[3] = msg.imu_state.quaternion[0]  # w
-        # TODO normalize quaternion && find quat type
-
-        # TODO: add feet vel and feet pos (additionnal info on base)
+        # TODO: use IMU quaternion for extra correction step ?
 
         # FEET KINEMATIC data ==================================================
         contact_list, pose_list, covariance_list = self.feet_transformations(msg)
@@ -135,6 +108,8 @@ class Inekf(Node):
 
         self.filter.setContacts(contact_pairs)
         self.filter.correctKinematics(kinematics_list)
+
+        self.publish_state(self.filter.getState(), msg.imu_state.gyroscope)
 
     def _unitree_to_urdf_vec(self, vec):
         # fmt: off
@@ -178,7 +153,16 @@ class Inekf(Node):
 
         return contact_list, pose_list, covariance_list
 
-    def propagate(self):
+    def publish_state(self, filter_state, twist_angular_vel):
+        # Get filter state
+        state_rotation = filter_state.getRotation()
+        state_position = filter_state.getPosition()
+        state_velocity = state_rotation.T @ filter_state.getX()[0:3, 3:4]
+        state_velocity = state_velocity.reshape(-1)
+
+        state_quaternion = pin.Quaternion(state_rotation)
+        state_quaternion.normalize()
+
         # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
         timestamp = self.get_clock().now().to_msg()
         self.transform_msg.header.stamp = timestamp
@@ -189,54 +173,35 @@ class Inekf(Node):
         self.odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
         self.odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
 
-        self.filter.propagate(self.imu_measurement, self.dt)
-
-        new_state = self.filter.getState()
-        new_r = new_state.getRotation()
-        new_p = new_state.getPosition()
-        new_v = new_r.T @ new_state.getX()[0:3, 3:4]
-        new_v = new_v.reshape(-1)
-        # self.get_logger().info('imu measure ' + str(self.imu_measurement))
-        # self.get_logger().info('Position ' + str(new_p))
-
-        quat = pin.Quaternion(new_r)
-        quat.normalize()
-
         # ROS2 transform
-        self.transform_msg.transform.translation.x = new_p[0]
-        self.transform_msg.transform.translation.y = new_p[1]
-        self.transform_msg.transform.translation.z = new_p[2]
+        self.transform_msg.transform.translation.x = state_position[0]
+        self.transform_msg.transform.translation.y = state_position[1]
+        self.transform_msg.transform.translation.z = state_position[2]
 
-        self.odom_msg.pose.pose.position.x = new_p[0]
-        self.odom_msg.pose.pose.position.y = new_p[1]
-        self.odom_msg.pose.pose.position.z = new_p[2]
+        self.odom_msg.pose.pose.position.x = state_position[0]
+        self.odom_msg.pose.pose.position.y = state_position[1]
+        self.odom_msg.pose.pose.position.z = state_position[2]
 
-        self.transform_msg.transform.rotation.x = quat.x
-        self.transform_msg.transform.rotation.y = quat.y
-        self.transform_msg.transform.rotation.z = quat.z
-        self.transform_msg.transform.rotation.w = quat.w
+        self.transform_msg.transform.rotation.x = state_quaternion.x
+        self.transform_msg.transform.rotation.y = state_quaternion.y
+        self.transform_msg.transform.rotation.z = state_quaternion.z
+        self.transform_msg.transform.rotation.w = state_quaternion.w
 
-        self.odom_msg.pose.pose.orientation.x = quat.x
-        self.odom_msg.pose.pose.orientation.y = quat.y
-        self.odom_msg.pose.pose.orientation.z = quat.z
-        self.odom_msg.pose.pose.orientation.w = quat.w
+        self.odom_msg.pose.pose.orientation.x = state_quaternion.x
+        self.odom_msg.pose.pose.orientation.y = state_quaternion.y
+        self.odom_msg.pose.pose.orientation.z = state_quaternion.z
+        self.odom_msg.pose.pose.orientation.w = state_quaternion.w
 
-        self.odom_msg.twist.twist.linear.x = new_v[0]
-        self.odom_msg.twist.twist.linear.y = new_v[1]
-        self.odom_msg.twist.twist.linear.z = new_v[2]
+        self.odom_msg.twist.twist.linear.x = state_velocity[0]
+        self.odom_msg.twist.twist.linear.y = state_velocity[1]
+        self.odom_msg.twist.twist.linear.z = state_velocity[2]
 
-        self.odom_msg.twist.twist.angular.x = self.imu_measurement[0]
-        self.odom_msg.twist.twist.angular.y = self.imu_measurement[1]
-        self.odom_msg.twist.twist.angular.z = self.imu_measurement[2]
+        self.odom_msg.twist.twist.angular.x = float(twist_angular_vel[0])
+        self.odom_msg.twist.twist.angular.y = float(twist_angular_vel[1])
+        self.odom_msg.twist.twist.angular.z = float(twist_angular_vel[2])
 
         self.tf_broadcaster.sendTransform(self.transform_msg)
         self.odom_publisher.publish(self.odom_msg)
-
-    # Attributes ===============================================================
-
-    estimated_landmarks = {}  # int:int
-    contacts = {}  # int:bool
-    estimated_contact_positions = {}  # int:int
 
 
 def main(args=None):
