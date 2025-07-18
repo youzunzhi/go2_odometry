@@ -11,7 +11,7 @@ import pinocchio as pin
 
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
-from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import ParameterDescriptor as PD
 from inekf import RobotState, NoiseParams, InEKF, Kinematics
 from go2_description.loader import loadGo2
 
@@ -23,12 +23,28 @@ class Inekf(Node):
     def __init__(self):
         super().__init__("inekf")
 
-        self.base_frame = self.declare_parameter("base_frame", "base").value
-        self.odom_frame = self.declare_parameter("odom_frame", "odom").value
-        robot_fq = self.declare_parameter(
-            "robot_freq", 500.0, ParameterDescriptor(description="Frequency at which the robot publish its state")
-        ).value
-        self.dt = 1.0 / robot_fq
+        # Ros params
+        # fmt: off
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("base_frame", "base", PD(description="Robot base frame name (for TF)")),
+                ("odom_frame", "odom", PD(description="World frame name (for TF)")),
+                ("robot_freq", 500.0, PD(description="Frequency at which the robot publish its state")),
+                ("gyroscope_noise", 0.01, PD(description="Inekf covariance value")),
+                ("accelerometer_noise", 0.1, PD(description="Inekf covariance value")),
+                ("gyroscopeBias_noise", 0.00001, PD(description="Inekf covariance value")),
+                ("accelerometerBias_noise", 0.0001, PD(description="Inekf covariance value")),
+                ("contact_noise", 0.001, PD(description="Inekf covariance value")),
+                ("joint_position_noise", 0.001, PD(description="Noise on joint configuration measurements to project using jacobian")),
+                ("joint_velocity_noise", 0.001, PD(description="Noise on joint velocity measurements to project using jacobian")),
+            ],
+        )
+        # fmt: on
+
+        self.base_frame = self.get_parameter("base_frame").value
+        self.odom_frame = self.get_parameter("odom_frame").value
+        self.dt = 1.0 / self.get_parameter("robot_freq").value
 
         # Load robot model
         self.robot = loadGo2()
@@ -53,11 +69,14 @@ class Inekf(Node):
 
         # Initialize state covariance
         noise_params = NoiseParams()
-        noise_params.setGyroscopeNoise(0.01)
-        noise_params.setAccelerometerNoise(0.1)
-        noise_params.setGyroscopeBiasNoise(0.00001)
-        noise_params.setAccelerometerBiasNoise(0.0001)
-        noise_params.setContactNoise(0.001)
+        noise_params.setGyroscopeNoise(self.get_parameter("gyroscope_noise").value)
+        noise_params.setAccelerometerNoise(self.get_parameter("accelerometer_noise").value)
+        noise_params.setGyroscopeBiasNoise(self.get_parameter("gyroscopeBias_noise").value)
+        noise_params.setAccelerometerBiasNoise(self.get_parameter("accelerometerBias_noise").value)
+        noise_params.setContactNoise(self.get_parameter("contact_noise").value)
+
+        self.joint_pos_noise = self.get_parameter("joint_position_noise").value
+        self.joint_vel_noise = self.get_parameter("joint_velocity_noise").value
 
         self.filter = InEKF(initial_state, noise_params)
         self.filter.setGravity(gravity)
@@ -81,7 +100,9 @@ class Inekf(Node):
 
             velocity = np.zeros(3)
 
-            kinematics = Kinematics(i, pose_list[i].translation, covariance_list[i], velocity, np.eye(3) * 0.001)
+            kinematics = Kinematics(
+                i, pose_list[i].translation, covariance_list[i], velocity, np.eye(3) * self.joint_vel_noise
+            )
             kinematics_list.append(kinematics)
 
         self.filter.setContacts(contact_pairs)
@@ -126,7 +147,7 @@ class Inekf(Node):
             pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
 
             Jc = pin.getFrameJacobian(self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
-            cov_pose = Jc @ np.eye(12) * 1e-3 @ Jc.transpose()
+            cov_pose = Jc @ np.eye(12) * self.joint_pos_noise @ Jc.transpose()
             covariance_list.append(cov_pose)
 
         return contact_list, pose_list, covariance_list
