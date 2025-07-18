@@ -37,7 +37,7 @@ class Inekf(Node):
                 ("accelerometerBias_noise", 0.0001, PD(description="Inekf covariance value")),
                 ("contact_noise", 0.001, PD(description="Inekf covariance value")),
                 ("joint_position_noise", 0.001, PD(description="Noise on joint configuration measurements to project using jacobian")),
-                ("joint_velocity_noise", 0.001, PD(description="Noise on joint velocity measurements to project using jacobian")),
+                ("contact_velocity_noise", 0.001, PD(description="Noise on contact velocity")),
             ],
         )
         # fmt: on
@@ -76,7 +76,7 @@ class Inekf(Node):
         noise_params.setContactNoise(self.get_parameter("contact_noise").value)
 
         self.joint_pos_noise = self.get_parameter("joint_position_noise").value
-        self.joint_vel_noise = self.get_parameter("joint_velocity_noise").value
+        self.contact_vel_noise = self.get_parameter("contact_velocity_noise").value
 
         self.filter = InEKF(initial_state, noise_params)
         self.filter.setGravity(gravity)
@@ -91,7 +91,7 @@ class Inekf(Node):
         # TODO: use IMU quaternion for extra correction step ?
 
         # FEET KINEMATIC data ==================================================
-        contact_list, pose_list, covariance_list = self.feet_transformations(msg)
+        contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
 
         contact_pairs = []
         kinematics_list = []
@@ -101,7 +101,11 @@ class Inekf(Node):
             velocity = np.zeros(3)
 
             kinematics = Kinematics(
-                i, pose_list[i].translation, covariance_list[i], velocity, np.eye(3) * self.joint_vel_noise
+                i,
+                pose_list[i].translation,
+                self.joint_pos_noise * normed_covariance_list[i],
+                velocity,
+                self.contact_vel_noise * np.eye(3),
             )
             kinematics_list.append(kinematics)
 
@@ -137,7 +141,7 @@ class Inekf(Node):
         # Make message
         contact_list = []
         pose_list = []
-        covariance_list = []
+        normed_covariance_list = []
         for i in range(4):
             if f_pin[i] >= 20:
                 contact_list.append(True)
@@ -147,10 +151,10 @@ class Inekf(Node):
             pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
 
             Jc = pin.getFrameJacobian(self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
-            cov_pose = Jc @ np.eye(12) * self.joint_pos_noise @ Jc.transpose()
-            covariance_list.append(cov_pose)
+            normed_cov_pose = Jc @ Jc.transpose()
+            normed_covariance_list.append(normed_cov_pose)
 
-        return contact_list, pose_list, covariance_list
+        return contact_list, pose_list, normed_covariance_list
 
     def publish_state(self, filter_state, twist_angular_vel):
         # Get filter state
