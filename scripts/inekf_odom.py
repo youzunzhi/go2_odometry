@@ -23,8 +23,8 @@ class Inekf(Node):
     def __init__(self):
         super().__init__("inekf")
 
-        self.declare_parameter("base_frame", "base")
-        self.declare_parameter("odom_frame", "odom")
+        self.base_frame = self.declare_parameter("base_frame", "base").value
+        self.odom_frame = self.declare_parameter("odom_frame", "odom").value
         robot_fq = self.declare_parameter(
             "robot_freq", 500.0, ParameterDescriptor(description="Frequency at which the robot publish its state")
         ).value
@@ -160,8 +160,8 @@ class Inekf(Node):
         # TF2 messages
         transform_msg = TransformStamped()
         transform_msg.header.stamp = timestamp
-        transform_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
-        transform_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
+        transform_msg.child_frame_id = self.base_frame
+        transform_msg.header.frame_id = self.odom_frame
 
         transform_msg.transform.translation.x = state_position[0]
         transform_msg.transform.translation.y = state_position[1]
@@ -177,8 +177,8 @@ class Inekf(Node):
         # Odometry topic
         odom_msg = Odometry()
         odom_msg.header.stamp = timestamp
-        odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
-        odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
+        odom_msg.child_frame_id = self.base_frame
+        odom_msg.header.frame_id = self.odom_frame
 
         odom_msg.pose.pose.position.x = state_position[0]
         odom_msg.pose.pose.position.y = state_position[1]
@@ -207,9 +207,6 @@ def main(args=None):
 
     rclpy.spin(inekf_node)
 
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
     inekf_node.destroy_node()
     rclpy.shutdown()
 
