@@ -7,13 +7,14 @@ from rclpy.node import Node
 
 from rclpy.qos import QoSProfile
 from nav_msgs.msg import Odometry
-from go2_odometry.msg import OdometryVector
+from unitree_go.msg import LowState
 import pinocchio as pin
 
-from sensor_msgs.msg import Imu
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
+from rcl_interfaces.msg import ParameterDescriptor
 from inekf import RobotState, NoiseParams, InEKF, Kinematics
+from go2_description.loader import loadGo2
 
 
 # ==============================================================================
@@ -26,13 +27,21 @@ class Inekf(Node):
         # ROS2 =================================================================
         self.declare_parameter("base_frame", "base")
         self.declare_parameter("odom_frame", "odom")
+        robot_fq = self.declare_parameter(
+            "robot_freq", 500.0, ParameterDescriptor(description="Fq at which the robot publish its state")
+        ).value
+        self.dt = 1.0 / robot_fq
+
+        robot = loadGo2()
+        self.rmodel = robot.model
+        self.rdata = self.rmodel.createData()
+        self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
+        self.foot_frame_id = [self.rmodel.getFrameId(frame_name) for frame_name in self.foot_frame_name]
+        self.imu_frame_id = self.rmodel.getFrameId("imu")
+
+        self.lowstate_subscription = self.create_subscription(LowState, "/lowstate", self.listener_callback, 10)
 
         qos_profile_keeplast = QoSProfile(history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
-        self.pos_feet_subscriber = self.create_subscription(
-            OdometryVector, "odometry/feet_pos", self.listener_feet_callback, qos_profile_keeplast
-        )
-        self.imu_subscription = self.create_subscription(Imu, "/imu", self.listener_callback, qos_profile_keeplast)
-
         self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", qos_profile_keeplast)
         self.tf_broadcaster = TransformBroadcaster(self)
         self.transform_msg = TransformStamped()
@@ -40,11 +49,6 @@ class Inekf(Node):
 
         self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
         self.foot_frame_ids = [0, 1, 2, 3]
-
-        # Filter and global variables ==========================================
-        self.DT_MIN = 1e-6
-        self.DT_MAX = 1
-        self.dt = 0
 
         # Data from go2 ========================================================
         self.imu_measurement = np.zeros(6)
@@ -94,76 +98,85 @@ class Inekf(Node):
         self.filter = InEKF(initial_state, noise_params)
         self.filter.setGravity(gravity)
 
-    def listener_feet_callback(self, state_msg):
-        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9
-
-        pose_vec = state_msg.pose_vec
-        contact_states = state_msg.contact_states
-        # self.get_logger().info('Feet in contact ' + str(state_msg.feet_names))
-
-        contact_list = []
-        kinematics_list = []
-
-        for i in range(len(self.foot_frame_name)):
-            contact_list.append((i, contact_states[i]))
-            pose = pose_vec[i]
-
-            quat = pin.Quaternion(
-                pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z
-            )
-            quat.normalize()
-
-            translation = np.zeros(3)
-            translation[0] = pose.pose.position.x
-            translation[1] = pose.pose.position.y
-            translation[2] = pose.pose.position.z
-
-            contact_cov = pose.covariance[:9]
-            contact_cov = np.squeeze(contact_cov)
-            contact_cov = contact_cov.reshape(3, 3)
-
-            velocity = np.zeros(3)
-
-            kinematics = Kinematics(i, translation, contact_cov, velocity, np.eye(3) * 0.001)
-            kinematics_list.append(kinematics)
-
-            # self.get_logger().info('Base contact of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,3]))
-            # self.get_logger().info('Rotation of ' + self.foot_frame_name[i] + ' is ' + str(pose_matrix[:3,:3]))
-
-        # self.get_logger().info('Contact list' + str(contact_list))
-        self.filter.setContacts(contact_list)
-        self.filter.correctKinematics(kinematics_list)
-
-    def listener_callback(self, state_msg):
-        # TODO verify if timestamp can be used as time
-        self.t = state_msg.header.stamp.sec + state_msg.header.stamp.nanosec * 1e-9
-        self.dt = self.t - self.t_prev
-
+    def listener_callback(self, msg):
         # IMU measurement - used for propagation ===============================
         #! gyroscope meas in filter are radians
-        self.imu_measurement[0] = state_msg.angular_velocity.x
-        self.imu_measurement[1] = state_msg.angular_velocity.y
-        self.imu_measurement[2] = state_msg.angular_velocity.z
+        self.imu_measurement[0] = msg.imu_state.gyroscope[0]  # x
+        self.imu_measurement[1] = msg.imu_state.gyroscope[1]  # y
+        self.imu_measurement[2] = msg.imu_state.gyroscope[2]  # z
 
-        self.imu_measurement[3] = state_msg.linear_acceleration.x
-        self.imu_measurement[4] = state_msg.linear_acceleration.y
-        self.imu_measurement[5] = state_msg.linear_acceleration.z
+        self.imu_measurement[3] = msg.imu_state.accelerometer[0]  # x
+        self.imu_measurement[4] = msg.imu_state.accelerometer[1]  # y
+        self.imu_measurement[5] = msg.imu_state.accelerometer[2]  # z
 
-        # breakpoint()
-        if self.dt > self.DT_MIN and self.dt < self.DT_MAX:
-            # propagate using previous measurement
-            self.propagate()
+        self.propagate()
 
         # KINEMATIC data =======================================================
-        self.quaternion_measurement[0] = state_msg.orientation.x
-        self.quaternion_measurement[1] = state_msg.orientation.y
-        self.quaternion_measurement[2] = state_msg.orientation.z
-        self.quaternion_measurement[3] = state_msg.orientation.w
+        self.quaternion_measurement[0] = msg.imu_state.quaternion[1]  # x
+        self.quaternion_measurement[1] = msg.imu_state.quaternion[2]  # y
+        self.quaternion_measurement[2] = msg.imu_state.quaternion[3]  # z
+        self.quaternion_measurement[3] = msg.imu_state.quaternion[0]  # w
         # TODO normalize quaternion && find quat type
 
         # TODO: add feet vel and feet pos (additionnal info on base)
-        self.t_prev = self.t
-        self.imu_measurement_prev = self.imu_measurement
+
+        # FEET KINEMATIC data ==================================================
+        contact_list, pose_list, covariance_list = self.feet_transformations(msg)
+
+        contact_pairs = []
+        kinematics_list = []
+        for i in range(len(self.foot_frame_name)):
+            contact_pairs.append((i, contact_list[i]))
+
+            velocity = np.zeros(3)
+
+            kinematics = Kinematics(i, pose_list[i].translation, covariance_list[i], velocity, np.eye(3) * 0.001)
+            kinematics_list.append(kinematics)
+
+        self.filter.setContacts(contact_pairs)
+        self.filter.correctKinematics(kinematics_list)
+
+    def _unitree_to_urdf_vec(self, vec):
+        # fmt: off
+        return  [vec[3],  vec[4],  vec[5],
+                 vec[0],  vec[1],  vec[2],
+                 vec[9],  vec[10], vec[11],
+                 vec[6],  vec[7],  vec[8],]
+        # fmt: on
+
+    def feet_transformations(self, state_msg):
+        # Get sensor measurement
+        q_unitree = [j.q for j in state_msg.motor_state[:12]]
+        v_unitree = [j.dq for j in state_msg.motor_state[:12]]
+        f_unitree = state_msg.foot_force
+
+        # Rearrange joints according to urdf
+        q_pin = np.array([0] * 6 + [1] + self._unitree_to_urdf_vec(q_unitree))
+        v_pin = np.array([0] * 6 + self._unitree_to_urdf_vec(v_unitree))
+        f_pin = [f_unitree[i] for i in [1, 0, 3, 2]]
+
+        # Compute positions and velocities
+        pin.forwardKinematics(self.rmodel, self.rdata, q_pin, v_pin)
+        pin.updateFramePlacements(self.rmodel, self.rdata)
+        pin.computeJointJacobians(self.rmodel, self.rdata)
+
+        # Make message
+        contact_list = []
+        pose_list = []
+        covariance_list = []
+        for i in range(4):
+            if f_pin[i] >= 20:
+                contact_list.append(True)
+            else:
+                contact_list.append(False)
+
+            pose_list.append(self.rdata.oMf[self.foot_frame_id[i]])
+
+            Jc = pin.getFrameJacobian(self.rmodel, self.rdata, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
+            cov_pose = Jc @ np.eye(12) * 1e-3 @ Jc.transpose()
+            covariance_list.append(cov_pose)
+
+        return contact_list, pose_list, covariance_list
 
     def propagate(self):
         # Transform from odom_frame (unmoving) to base_frame (tied to robot base)
@@ -176,14 +189,14 @@ class Inekf(Node):
         self.odom_msg.child_frame_id = "base"  # self.get_parameter("base_frame").value
         self.odom_msg.header.frame_id = "odom"  # self.get_parameter("odom_frame").value
 
-        self.filter.propagate(self.imu_measurement_prev, self.dt)
+        self.filter.propagate(self.imu_measurement, self.dt)
 
         new_state = self.filter.getState()
         new_r = new_state.getRotation()
         new_p = new_state.getPosition()
         new_v = new_r.T @ new_state.getX()[0:3, 3:4]
         new_v = new_v.reshape(-1)
-        # self.get_logger().info('imu measure ' + str(self.imu_measurement_prev))
+        # self.get_logger().info('imu measure ' + str(self.imu_measurement))
         # self.get_logger().info('Position ' + str(new_p))
 
         quat = pin.Quaternion(new_r)
@@ -212,9 +225,9 @@ class Inekf(Node):
         self.odom_msg.twist.twist.linear.y = new_v[1]
         self.odom_msg.twist.twist.linear.z = new_v[2]
 
-        self.odom_msg.twist.twist.angular.x = self.imu_measurement_prev[0]
-        self.odom_msg.twist.twist.angular.y = self.imu_measurement_prev[1]
-        self.odom_msg.twist.twist.angular.z = self.imu_measurement_prev[2]
+        self.odom_msg.twist.twist.angular.x = self.imu_measurement[0]
+        self.odom_msg.twist.twist.angular.y = self.imu_measurement[1]
+        self.odom_msg.twist.twist.angular.z = self.imu_measurement[2]
 
         self.tf_broadcaster.sendTransform(self.transform_msg)
         self.odom_publisher.publish(self.odom_msg)
