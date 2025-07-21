@@ -22,21 +22,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 unset(PYTHON_SOABI)
 
-# Build msgs
-set(msg_files
-  "msg/OdometryVector.msg"
-)
-
-rosidl_generate_interfaces(${PROJECT_NAME}
-  ${msg_files}
-  DEPENDENCIES builtin_interfaces std_msgs sensor_msgs
-)
-
 add_executable(state_converter_node src/go2_state_converter_node.cpp)
 ament_target_dependencies(state_converter_node rclcpp unitree_go sensor_msgs)
-
-rosidl_target_interfaces(state_converter_node
-  ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 install(TARGETS
   state_converter_node
