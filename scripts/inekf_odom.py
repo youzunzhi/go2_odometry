@@ -134,7 +134,7 @@ class Inekf(Node):
             # fmt: on
 
         def feet_contacts(feet_forces):
-            return [True if f >= 20 else False for f in feet_forces]
+            return [bool(f >= 20) for f in feet_forces]
 
         # Get sensor measurement
         q_unitree = [j.q for j in state_msg.motor_state[:12]]
