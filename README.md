@@ -3,7 +3,7 @@ Go2 Odometry
 
 ## Summary
 Provide a solid state estimation for the unitree Go2 robot, via the [invariant-ekf](https://github.com/inria-paris-robotics-lab/invariant-ekf) package.
-It also provides a simple node to convert unitree custom messages into "standard" ros messages and re-publish them on separate topics.
+It also provides simple nodes to convert unitree custom messages into "standard" ros messages and re-publish them on separate topics.
 
 
 >[!IMPORTANT]
