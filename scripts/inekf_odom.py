@@ -114,23 +114,26 @@ class Inekf(Node):
 
         self.publish_state(self.filter.getState(), msg.imu_state.gyroscope)
 
-    def _unitree_to_urdf_vec(self, vec):
-        # fmt: off
-        return  [vec[3],  vec[4],  vec[5],
-                 vec[0],  vec[1],  vec[2],
-                 vec[9],  vec[10], vec[11],
-                 vec[6],  vec[7],  vec[8],]
-        # fmt: on
-
     def feet_transformations(self, state_msg):
+        def unitree_to_urdf_vec(vec):
+            # fmt: off
+            return  [vec[3],  vec[4],  vec[5],
+                     vec[0],  vec[1],  vec[2],
+                     vec[9],  vec[10], vec[11],
+                     vec[6],  vec[7],  vec[8],]
+            # fmt: on
+
+        def feet_contacts(feet_forces):
+            return [True if f >= 20 else False for f in feet_forces]
+
         # Get sensor measurement
         q_unitree = [j.q for j in state_msg.motor_state[:12]]
         v_unitree = [j.dq for j in state_msg.motor_state[:12]]
         f_unitree = state_msg.foot_force
 
         # Rearrange joints according to urdf
-        q_pin = np.array([0] * 6 + [1] + self._unitree_to_urdf_vec(q_unitree))
-        v_pin = np.array([0] * 6 + self._unitree_to_urdf_vec(v_unitree))
+        q_pin = np.array([0] * 6 + [1] + unitree_to_urdf_vec(q_unitree))
+        v_pin = np.array([0] * 6 + unitree_to_urdf_vec(v_unitree))
         f_pin = [f_unitree[i] for i in [1, 0, 3, 2]]
 
         # Compute positions and velocities
@@ -139,15 +142,10 @@ class Inekf(Node):
         pin.computeJointJacobians(self.robot.model, self.robot.data)
 
         # Make message
-        contact_list = []
+        contact_list = feet_contacts(f_pin)
         pose_list = []
         normed_covariance_list = []
         for i in range(4):
-            if f_pin[i] >= 20:
-                contact_list.append(True)
-            else:
-                contact_list.append(False)
-
             pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
 
             Jc = pin.getFrameJacobian(self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
