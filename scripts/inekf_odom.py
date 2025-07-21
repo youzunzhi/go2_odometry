@@ -45,6 +45,7 @@ class Inekf(Node):
         self.base_frame = self.get_parameter("base_frame").value
         self.odom_frame = self.get_parameter("odom_frame").value
         self.dt = 1.0 / self.get_parameter("robot_freq").value
+        self.pause = True  # By default filter is paused and wait for the first feet contact to start
 
         # Load robot model
         self.robot = loadGo2()
@@ -85,14 +86,23 @@ class Inekf(Node):
         # Format IMU measurements
         imu_state = np.concatenate([msg.imu_state.gyroscope, msg.imu_state.accelerometer])
 
-        # Propagate filter
+        # Feet kinematic data
+        contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
+
+        if self.pause:
+            if any(contact_list):
+                self.pause = False
+                self.get_logger().info("One foot (or more) in contact with the ground: starting filter.")
+            else:
+                self.get_logger().info("Waiting for one or more foot to touch the ground to start filter.", once=True)
+                return  # Skip the rest of the filter
+
+        # Propagation step: using IMU
         self.filter.propagate(imu_state, self.dt)
 
         # TODO: use IMU quaternion for extra correction step ?
 
-        # FEET KINEMATIC data ==================================================
-        contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
-
+        # Correction step: using feet kinematics
         contact_pairs = []
         kinematics_list = []
         for i in range(len(self.foot_frame_name)):
