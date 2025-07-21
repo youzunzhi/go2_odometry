@@ -2,7 +2,7 @@ Go2 Odometry
 ===
 
 ## Summary
-Provide a simple state estimation for the unitree Go2 robot, via the [invariant-ekf](https://github.com/inria-paris-robotics-lab/invariant-ekf) package.
+Provide a solid state estimation for the unitree Go2 robot, via the [invariant-ekf](https://github.com/inria-paris-robotics-lab/invariant-ekf) package.
 It also provides a simple node to convert unitree custom messages into "standard" ros messages and re-publish them on separate topics.
 
 
@@ -16,7 +16,7 @@ The main dependencies of this package are:
 * Unitree ros2 interface: https://github.com/unitreerobotics/unitree_ros2
 * Our fork of the invariant ekf lib: https://github.com/inria-paris-robotics-lab/invariant-ekf
 * Our fork of the go2 urdf files : https://github.com/inria-paris-robotics-lab/go2_description
-* Pinocchio (conda or apt installable, but might already come with your ros)
+* Pinocchio (conda or apt installable, but might already come with your ros install)
 
 
 ## Launchfiles
@@ -58,9 +58,7 @@ The other nodes launched are:
 A ros node connecting the [invariant extended kalman filter library](https://github.com/inria-paris-robotics-lab/invariant-ekf) to topics.
 
 This Kalman listen to:
-* `/imu`: published in this case by the **go2_state_converter** node.
-* `/tf`: populated in this case by the **robot_state_publisher** node.
-* `/odometry/feet_pos`: feet poses and contact sensor used to correct the estimate using the kinematics of the robot. (See next node)
+* `/lowstate`: to get IMU, joint and feet sensors data from the robot.
 
 It then publishes on:
 * `/tf`: The floating base pose estimation
@@ -123,18 +121,19 @@ Takes several ros parameters :
 
  ---
 ### go2_state_publisher.launch.py
-Starts the following nodes:
-This file launches **go2_state_publisher.launch.py** detailled further down.
+This launchfile is usefull to use other standard ros node out of the box. For instance, for RVIZ to display a robot it needs 1. a robot description 2. The TF of all the bodies.
+
+TO do so, this launchfile starts the following nodes:
 
 ##### go2_odometry/state_converter_node.cpp
 Listens to `unitree_ros2/LowState` messages and splits them into "standard" ros messages. It also re-arranges the joint order to match urdf order (which is not the order sent by the unitree robot).
 
-The messages are timestamped using the host clock upon `/lowstate` msg reception (because the `unitree_ros2/LowState` msg is not timestamped)
-
-Finally the published topics are the following:
+The published topics are the following:
 * `/imu`: populated by `unitree_ros2/LowState`.`imu`
 * `/joint_states`: populated by `unitree_ros2/LowState`.`motor_state`.<`d`/`dq`/...>
-* `/clock`: populated by `utlidar/imu`
+
+The messages are timestamped using the host clock upon `/lowstate` msg reception (because the `unitree_ros2/LowState` msg is not timestamped)
+
 
 ##### robot_state_publisher
 Standard ros node that listens to `/joint_states` topic and publishes TF transform for all links of a robot.
