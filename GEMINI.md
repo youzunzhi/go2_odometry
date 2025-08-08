@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Overview
 
 This is a ROS2 package for state estimation on the Unitree Go2 robot using invariant extended Kalman filters (InEKF). The package provides multiple odometry sources and converts Unitree-specific messages to standard ROS messages.
