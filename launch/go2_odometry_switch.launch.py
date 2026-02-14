@@ -16,6 +16,31 @@ def generate_launch_description():
         default_value=TextSubstitution(text="0.30"),
         description="[IF FAKE ODOM] Height of the robot base.",
     )
+    inekf_imu_source_arg = DeclareLaunchArgument(
+        "imu_source",
+        default_value="lowstate",
+        description="[IF USE_FULL_ODOM] IMU source used by InEKF: lowstate or utlidar",
+    )
+    inekf_utlidar_topic_arg = DeclareLaunchArgument(
+        "utlidar_imu_topic",
+        default_value="/utlidar/imu",
+        description="[IF USE_FULL_ODOM] Topic used when imu_source is utlidar",
+    )
+    inekf_imu_rotation_arg = DeclareLaunchArgument(
+        "imu_rotation_rpy",
+        default_value=TextSubstitution(text="[0.0, 0.0, 0.0]"),
+        description="[IF USE_FULL_ODOM] RPY rotation (rad) from selected imu frame to filter imu frame",
+    )
+    inekf_imu_translation_arg = DeclareLaunchArgument(
+        "imu_translation_xyz",
+        default_value=TextSubstitution(text="[0.0, 0.0, 0.0]"),
+        description="[IF USE_FULL_ODOM] Translation (m) from selected imu origin to filter imu origin",
+    )
+    inekf_compensate_translation_arg = DeclareLaunchArgument(
+        "compensate_imu_translation",
+        default_value="false",
+        description="[IF USE_FULL_ODOM] Apply translation compensation between IMU origins",
+    )
 
     mocap_base_frame_arg = DeclareLaunchArgument(
         "base_frame",
@@ -60,6 +85,11 @@ def generate_launch_description():
             mocap_ip_arg,
             mocap_publishing_freq_arg,
             fake_odom_base_height_arg,
+            inekf_imu_source_arg,
+            inekf_utlidar_topic_arg,
+            inekf_imu_rotation_arg,
+            inekf_imu_translation_arg,
+            inekf_compensate_translation_arg,
             odom_type_arg,
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([mocap_launch_file]),
@@ -71,6 +101,13 @@ def generate_launch_description():
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([full_state_publisher_launch_file]),
+                launch_arguments={
+                    "imu_source": LaunchConfiguration("imu_source"),
+                    "utlidar_imu_topic": LaunchConfiguration("utlidar_imu_topic"),
+                    "imu_rotation_rpy": LaunchConfiguration("imu_rotation_rpy"),
+                    "imu_translation_xyz": LaunchConfiguration("imu_translation_xyz"),
+                    "compensate_imu_translation": LaunchConfiguration("compensate_imu_translation"),
+                }.items(),
                 condition=IfCondition(
                     PythonExpression(["'", LaunchConfiguration("odom_type"), "' == 'use_full_odom'"])
                 ),

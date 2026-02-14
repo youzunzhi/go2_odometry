@@ -42,7 +42,7 @@ Calls the **go2_mocap.launch.py** file.
 Parameters available depending on the odometry used :
 | Type of odometry choosen | | | | | |
 |-- |-- | --| --|--|--|
-|`use_full_odom`| No parameters |
+|`use_full_odom`|imu_source|utlidar_imu_topic|imu_rotation_rpy|imu_translation_xyz|compensate_imu_translation|
 |`fake` | base_height|
 | `mocap`|base_frame|odom_frame|wanted_body|qualisys_ip|publishing_freq|
 
@@ -57,8 +57,18 @@ The other nodes launched are:
 ##### go2_odometry/inekf_odom.py
 A ros node connecting the [invariant extended kalman filter library](https://github.com/inria-paris-robotics-lab/invariant-ekf) to topics.
 
-This Kalman listen to:
-* `/lowstate`: to get IMU, joint and feet sensors data from the robot.
+This Kalman listens to:
+* `/lowstate`: always used to get joints and feet sensors data.
+* IMU source (configurable with `imu_source`):
+  * `lowstate` (default): use `/lowstate`.`imu_state`
+  * `utlidar`: use `/utlidar/imu` (or `utlidar_imu_topic`)
+
+Useful IMU-related parameters in `go2_inekf_odometry.launch.py`:
+- `imu_source` (`lowstate` or `utlidar`)
+- `utlidar_imu_topic` (default: `/utlidar/imu`)
+- `imu_rotation_rpy` (default: `[0.0, 0.0, 0.0]`, radians)
+- `imu_translation_xyz` (default: `[0.0, 0.0, 0.0]`, meters)
+- `compensate_imu_translation` (default: `false`)
 
 It then publishes on:
 * `/tf`: The floating base pose estimation

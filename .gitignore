@@ -1,5 +1,9 @@
 # Ignore build and install directories
 build/
 install/
+log/
+
 **/__pycache__/**
-pose_comparison.png
+
+
+pose_comparison*.png

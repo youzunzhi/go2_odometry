@@ -1,11 +1,13 @@
 #!/bin/env python3
 
+import ast
 import numpy as np
 
 import rclpy
 from rclpy.node import Node
 
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 from unitree_go.msg import LowState
 import pinocchio as pin
 
@@ -38,14 +40,48 @@ class Inekf(Node):
                 ("contact_noise", 0.001, PD(description="Inekf covariance value")),
                 ("joint_position_noise", 0.001, PD(description="Noise on joint configuration measurements to project using jacobian")),
                 ("contact_velocity_noise", 0.001, PD(description="Noise on contact velocity")),
+                ("imu_source", "lowstate", PD(description="IMU source used for propagation: 'lowstate' or 'utlidar'")),
+                ("utlidar_imu_topic", "/utlidar/imu", PD(description="Topic used when imu_source='utlidar'")),
+                (
+                    "imu_rotation_rpy",
+                    [0.0, 0.0, 0.0],
+                    PD(description="RPY rotation (rad) from selected IMU frame to filter IMU frame"),
+                ),
+                (
+                    "imu_translation_xyz",
+                    [0.0, 0.0, 0.0],
+                    PD(description="Translation (m) from selected IMU origin to filter IMU origin"),
+                ),
+                (
+                    "compensate_imu_translation",
+                    False,
+                    PD(description="Apply angular-rate-based translation compensation between IMU origins"),
+                ),
             ],
         )
         # fmt: on
 
         self.base_frame = self.get_parameter("base_frame").value
         self.odom_frame = self.get_parameter("odom_frame").value
-        self.dt = 1.0 / self.get_parameter("robot_freq").value
+        self.dt = 1.0 / self.get_parameter("robot_freq").get_parameter_value().double_value
         self.pause = True  # By default filter is paused and wait for the first feet contact to start
+        self.imu_source = self.get_parameter("imu_source").get_parameter_value().string_value
+        if self.imu_source not in {"lowstate", "utlidar"}:
+            self.get_logger().warning(f"Unknown imu_source '{self.imu_source}', fallback to 'lowstate'.")
+            self.imu_source = "lowstate"
+
+        imu_rotation_rpy = self.get_vector3_param("imu_rotation_rpy")
+        imu_translation_xyz = self.get_vector3_param("imu_translation_xyz")
+        self.imu_rotation = pin.rpy.rpyToMatrix(imu_rotation_rpy)
+        self.imu_translation = imu_translation_xyz
+        self.compensate_imu_translation = (
+            self.get_parameter("compensate_imu_translation").get_parameter_value().bool_value
+        )
+        self.prev_gyro_in_filter_imu = None
+        self.prev_imu_stamp_sec = None
+        self.latest_utlidar_gyro = None
+        self.latest_utlidar_acc = None
+        self.latest_utlidar_stamp_sec = None
 
         # Load robot model
         self.robot = loadGo2()
@@ -55,6 +91,12 @@ class Inekf(Node):
 
         # In/Out topics
         self.lowstate_subscription = self.create_subscription(LowState, "/lowstate", self.listener_callback, 10)
+        if self.imu_source == "utlidar":
+            utlidar_imu_topic = self.get_parameter("utlidar_imu_topic").get_parameter_value().string_value
+            self.utlidar_imu_subscription = self.create_subscription(Imu, utlidar_imu_topic, self.utlidar_callback, 10)
+            self.get_logger().info(f"Using IMU from '{utlidar_imu_topic}'")
+        else:
+            self.get_logger().info("Using IMU from '/lowstate'")
         self.odom_publisher = self.create_publisher(Odometry, "/odometry/filtered", 1)
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -82,9 +124,93 @@ class Inekf(Node):
         self.filter = InEKF(initial_state, noise_params)
         self.filter.setGravity(gravity)
 
+    @staticmethod
+    def stamp_to_sec(stamp):
+        if stamp is None:
+            return None
+        return float(stamp.sec) + 1e-9 * float(stamp.nanosec)
+
+    def get_vector3_param(self, parameter_name):
+        raw_value = self.get_parameter(parameter_name).value
+        if isinstance(raw_value, str):
+            try:
+                raw_value = ast.literal_eval(raw_value)
+            except (ValueError, SyntaxError):
+                self.get_logger().warning(f"{parameter_name} must be a 3D vector. Fallback to [0, 0, 0].")
+                return np.zeros(3)
+
+        try:
+            vector = np.array(raw_value, dtype=float).reshape(-1)
+        except (TypeError, ValueError):
+            self.get_logger().warning(f"{parameter_name} must be a 3D vector. Fallback to [0, 0, 0].")
+            return np.zeros(3)
+
+        if vector.shape[0] != 3:
+            self.get_logger().warning(f"{parameter_name} must contain 3 values. Fallback to [0, 0, 0].")
+            return np.zeros(3)
+        return vector
+
+    def utlidar_callback(self, msg):
+        self.latest_utlidar_gyro = np.array(
+            [
+                float(msg.angular_velocity.x),
+                float(msg.angular_velocity.y),
+                float(msg.angular_velocity.z),
+            ]
+        )
+        self.latest_utlidar_acc = np.array(
+            [
+                float(msg.linear_acceleration.x),
+                float(msg.linear_acceleration.y),
+                float(msg.linear_acceleration.z),
+            ]
+        )
+        self.latest_utlidar_stamp_sec = self.stamp_to_sec(msg.header.stamp)
+
+    def get_imu_measurement(self, lowstate_msg):
+        if self.imu_source == "utlidar":
+            if self.latest_utlidar_gyro is None or self.latest_utlidar_acc is None:
+                self.get_logger().info("Waiting for first /utlidar/imu message before propagating filter.", once=True)
+                return None, None
+            gyro = self.latest_utlidar_gyro.copy()
+            acc = self.latest_utlidar_acc.copy()
+            stamp_sec = self.latest_utlidar_stamp_sec
+        else:
+            gyro = np.array(lowstate_msg.imu_state.gyroscope, dtype=float)
+            acc = np.array(lowstate_msg.imu_state.accelerometer, dtype=float)
+            stamp_sec = None
+
+        gyro, acc = self.compensate_imu_transform(gyro, acc, stamp_sec)
+        imu_state = np.concatenate([gyro, acc])
+        return imu_state, gyro
+
+    def compensate_imu_transform(self, gyro, acc, stamp_sec):
+        gyro_in_filter_imu = self.imu_rotation @ gyro
+        acc_in_filter_imu = self.imu_rotation @ acc
+
+        if self.compensate_imu_translation:
+            gyro_dot = np.zeros(3)
+            if self.prev_gyro_in_filter_imu is not None:
+                dt = self.dt
+                if stamp_sec is not None and self.prev_imu_stamp_sec is not None:
+                    dt = max(stamp_sec - self.prev_imu_stamp_sec, 1e-6)
+                gyro_dot = (gyro_in_filter_imu - self.prev_gyro_in_filter_imu) / max(dt, 1e-6)
+
+            translation_effect = np.cross(gyro_dot, self.imu_translation) + np.cross(
+                gyro_in_filter_imu, np.cross(gyro_in_filter_imu, self.imu_translation)
+            )
+            acc_in_filter_imu = acc_in_filter_imu + translation_effect
+
+        self.prev_gyro_in_filter_imu = gyro_in_filter_imu.copy()
+        if stamp_sec is not None:
+            self.prev_imu_stamp_sec = stamp_sec
+        return gyro_in_filter_imu, acc_in_filter_imu
+
     def listener_callback(self, msg):
         # Format IMU measurements
-        imu_state = np.concatenate([msg.imu_state.gyroscope, msg.imu_state.accelerometer])
+        imu_state, gyro = self.get_imu_measurement(msg)
+        if imu_state is None:
+            return
 
         # Feet kinematic data
         contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
@@ -122,7 +248,7 @@ class Inekf(Node):
         self.filter.setContacts(contact_pairs)
         self.filter.correctKinematics(kinematics_list)
 
-        self.publish_state(self.filter.getState(), msg.imu_state.gyroscope)
+        self.publish_state(self.filter.getState(), gyro)
 
     def feet_transformations(self, state_msg):
         def unitree_to_urdf_vec(vec):
@@ -134,7 +260,9 @@ class Inekf(Node):
             # fmt: on
 
         def feet_contacts(feet_forces):
-            return [bool(f >= 20) for f in feet_forces]
+            CONTACT_THRESHOLD = 22
+            ret = [bool(f >= CONTACT_THRESHOLD) for f in feet_forces]
+            return ret
 
         # Get sensor measurement
         q_unitree = [j.q for j in state_msg.motor_state[:12]]
