@@ -6,16 +6,18 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pinocchio as pin
-from inekf import InEKF, Kinematics, NoiseParams, RobotState
 from nav_msgs.msg import Odometry
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 from sensor_msgs.msg import Imu
 from unitree_go.msg import LowState
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from inekf_core import InekfCore, stamp_to_sec  # noqa: E402
 
 
 DEFAULT_LOWSTATE_TOPIC = "/lowstate"
@@ -30,228 +32,18 @@ class OdomSample:
     quaternion_xyzw: np.ndarray
 
 
-def _try_import_load_go2():
-    try:
-        from go2_description.loader import loadGo2  # type: ignore
-
-        return loadGo2
-    except ModuleNotFoundError:
-        candidate_patterns = [
-            "/home/*/go2_description/install/go2_description/lib/python*/site-packages",
-            "/opt/ros/*/lib/python*/site-packages",
-        ]
-        for pattern in candidate_patterns:
-            for site_pkg in sorted(Path("/").glob(pattern.lstrip("/"))):
-                site_pkg_str = str(site_pkg)
-                if site_pkg_str not in sys.path:
-                    sys.path.append(site_pkg_str)
-                try:
-                    from go2_description.loader import loadGo2  # type: ignore
-
-                    return loadGo2
-                except ModuleNotFoundError:
-                    continue
-        raise
-
-
-class OfflineInekf:
-    """
-    Offline mirror of scripts/inekf_odom.py for bag replay.
-    """
-
-    def __init__(
-        self,
-        imu_source: str,
-        robot_freq: float = 500.0,
-        gyroscope_noise: float = 0.01,
-        accelerometer_noise: float = 0.1,
-        gyroscope_bias_noise: float = 0.00001,
-        accelerometer_bias_noise: float = 0.0001,
-        contact_noise: float = 0.001,
-        joint_position_noise: float = 0.001,
-        contact_velocity_noise: float = 0.001,
-        imu_rotation_rpy: Sequence[float] = (0.0, 0.0, 0.0),
-        imu_translation_xyz: Sequence[float] = (0.0, 0.0, 0.0),
-        compensate_imu_translation: bool = False,
-    ):
-        if imu_source not in {"lowstate", "utlidar"}:
-            raise ValueError("imu_source must be 'lowstate' or 'utlidar'")
-        self.imu_source = imu_source
-        self.dt = 1.0 / float(robot_freq)
-        self.pause = True
-
-        self.imu_rotation = pin.rpy.rpyToMatrix(np.array(imu_rotation_rpy, dtype=float))
-        self.imu_translation = np.array(imu_translation_xyz, dtype=float)
-        self.compensate_imu_translation = bool(compensate_imu_translation)
-        self.prev_gyro_in_filter_imu: Optional[np.ndarray] = None
-        self.prev_imu_stamp_sec: Optional[float] = None
-        self.latest_utlidar_gyro: Optional[np.ndarray] = None
-        self.latest_utlidar_acc: Optional[np.ndarray] = None
-        self.latest_utlidar_stamp_sec: Optional[float] = None
-
-        load_go2 = _try_import_load_go2()
-        self.robot = load_go2()
-        self.foot_frame_name = [prefix + "_foot" for prefix in ["FL", "FR", "RL", "RR"]]
-        self.foot_frame_id = [self.robot.model.getFrameId(frame_name) for frame_name in self.foot_frame_name]
-
-        gravity = np.array([0.0, 0.0, -9.81])
-        initial_state = RobotState()
-        initial_state.setRotation(np.eye(3))
-        initial_state.setVelocity(np.zeros(3))
-        initial_state.setPosition(np.zeros(3))
-        initial_state.setGyroscopeBias(np.zeros(3))
-        initial_state.setAccelerometerBias(np.zeros(3))
-
-        noise_params = NoiseParams()
-        noise_params.setGyroscopeNoise(gyroscope_noise)
-        noise_params.setAccelerometerNoise(accelerometer_noise)
-        noise_params.setGyroscopeBiasNoise(gyroscope_bias_noise)
-        noise_params.setAccelerometerBiasNoise(accelerometer_bias_noise)
-        noise_params.setContactNoise(contact_noise)
-
-        self.joint_pos_noise = joint_position_noise
-        self.contact_vel_noise = contact_velocity_noise
-
-        self.filter = InEKF(initial_state, noise_params)
-        self.filter.setGravity(gravity)
-
-    def utlidar_callback(self, msg: Imu):
-        self.latest_utlidar_gyro = np.array(
-            [float(msg.angular_velocity.x), float(msg.angular_velocity.y), float(msg.angular_velocity.z)]
-        )
-        self.latest_utlidar_acc = np.array(
-            [float(msg.linear_acceleration.x), float(msg.linear_acceleration.y), float(msg.linear_acceleration.z)]
-        )
-        self.latest_utlidar_stamp_sec = stamp_to_sec(msg.header.stamp)
-
-    def compensate_imu_transform(
-        self, gyro: np.ndarray, acc: np.ndarray, stamp_sec: Optional[float]
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        gyro_in_filter_imu = self.imu_rotation @ gyro
-        acc_in_filter_imu = self.imu_rotation @ acc
-
-        if self.compensate_imu_translation:
-            gyro_dot = np.zeros(3)
-            if self.prev_gyro_in_filter_imu is not None:
-                dt = self.dt
-                if stamp_sec is not None and self.prev_imu_stamp_sec is not None:
-                    dt = max(stamp_sec - self.prev_imu_stamp_sec, 1e-6)
-                gyro_dot = (gyro_in_filter_imu - self.prev_gyro_in_filter_imu) / max(dt, 1e-6)
-
-            translation_effect = np.cross(gyro_dot, self.imu_translation) + np.cross(
-                gyro_in_filter_imu, np.cross(gyro_in_filter_imu, self.imu_translation)
-            )
-            acc_in_filter_imu = acc_in_filter_imu + translation_effect
-
-        self.prev_gyro_in_filter_imu = gyro_in_filter_imu.copy()
-        if stamp_sec is not None:
-            self.prev_imu_stamp_sec = stamp_sec
-        return gyro_in_filter_imu, acc_in_filter_imu
-
-    def get_imu_measurement(self, lowstate_msg: LowState) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        if self.imu_source == "utlidar":
-            if self.latest_utlidar_gyro is None or self.latest_utlidar_acc is None:
-                return None, None
-            gyro = self.latest_utlidar_gyro.copy()
-            acc = self.latest_utlidar_acc.copy()
-            stamp_sec = self.latest_utlidar_stamp_sec
-        else:
-            gyro = np.array(lowstate_msg.imu_state.gyroscope, dtype=float)
-            acc = np.array(lowstate_msg.imu_state.accelerometer, dtype=float)
-            stamp_sec = None
-
-        gyro, acc = self.compensate_imu_transform(gyro, acc, stamp_sec)
-        imu_state = np.asarray(np.concatenate([gyro, acc]), dtype=float)
-        return imu_state, np.asarray(gyro, dtype=float)
-
-    def feet_transformations(self, state_msg: LowState):
-        def unitree_to_urdf_vec(vec):
-            return [
-                vec[3],
-                vec[4],
-                vec[5],
-                vec[0],
-                vec[1],
-                vec[2],
-                vec[9],
-                vec[10],
-                vec[11],
-                vec[6],
-                vec[7],
-                vec[8],
-            ]
-
-        def feet_contacts(feet_forces):
-            contact_threshold = 22
-            return [bool(f >= contact_threshold) for f in feet_forces]
-
-        q_unitree = [float(j.q) for j in list(state_msg.motor_state)[:12]]
-        v_unitree = [float(j.dq) for j in list(state_msg.motor_state)[:12]]
-        f_unitree = list(state_msg.foot_force)
-
-        q_pin = np.array([0] * 6 + [1] + unitree_to_urdf_vec(q_unitree))
-        v_pin = np.array([0] * 6 + unitree_to_urdf_vec(v_unitree))
-        f_pin = [f_unitree[i] for i in [1, 0, 3, 2]]
-
-        pin.forwardKinematics(self.robot.model, self.robot.data, q_pin, v_pin)
-        pin.updateFramePlacements(self.robot.model, self.robot.data)
-        pin.computeJointJacobians(self.robot.model, self.robot.data)
-
-        contact_list = feet_contacts(f_pin)
-        pose_list = []
-        normed_covariance_list = []
-        for i in range(4):
-            pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
-            jc = pin.getFrameJacobian(self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL)[:3, 6:]
-            normed_cov_pose = jc @ jc.transpose()
-            normed_covariance_list.append(normed_cov_pose)
-
-        return contact_list, pose_list, normed_covariance_list
-
-    def process_lowstate(self, msg: LowState, timestamp_ns: int) -> Optional[OdomSample]:
-        imu_state, _gyro = self.get_imu_measurement(msg)
-        if imu_state is None:
-            return None
-
-        contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
-        if self.pause:
-            if any(contact_list):
-                self.pause = False
-            else:
-                return None
-
-        self.filter.propagate(imu_state, self.dt)
-
-        contact_pairs = []
-        kinematics_list = []
-        for i in range(len(self.foot_frame_name)):
-            contact_pairs.append((i, contact_list[i]))
-            velocity = np.zeros(3)
-            kinematics = Kinematics(
-                i,
-                pose_list[i].translation,
-                self.joint_pos_noise * normed_covariance_list[i],
-                velocity,
-                self.contact_vel_noise * np.eye(3),
-            )
-            kinematics_list.append(kinematics)
-
-        self.filter.setContacts(contact_pairs)
-        self.filter.correctKinematics(kinematics_list)
-        filter_state = self.filter.getState()
-
-        state_rotation = filter_state.getRotation()
-        state_position = filter_state.getPosition().reshape(3)
-        state_quaternion = pin.Quaternion(state_rotation)
-        state_quaternion.normalize()
-        quat_xyzw = np.array([state_quaternion.x, state_quaternion.y, state_quaternion.z, state_quaternion.w])
-        return OdomSample(timestamp_ns=timestamp_ns, position=state_position.copy(), quaternion_xyzw=quat_xyzw)
-
-
-def stamp_to_sec(stamp) -> Optional[float]:
-    if stamp is None:
-        return None
-    return float(stamp.sec) + 1e-9 * float(stamp.nanosec)
+def _filter_state_to_odom_sample(filter_state, timestamp_ns: int) -> OdomSample:
+    """Extract position and orientation from an InEKF filter state."""
+    state_position = filter_state.getPosition().reshape(3)
+    state_quaternion = pin.Quaternion(filter_state.getRotation())
+    state_quaternion.normalize()
+    return OdomSample(
+        timestamp_ns=timestamp_ns,
+        position=state_position.copy(),
+        quaternion_xyzw=np.array(
+            [state_quaternion.x, state_quaternion.y, state_quaternion.z, state_quaternion.w]
+        ),
+    )
 
 
 def quaternion_to_euler(x: float, y: float, z: float, w: float) -> Tuple[float, float, float]:
@@ -527,36 +319,20 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp_str = datetime.now().strftime("%m%d-%H%M%S")
 
-    filters = {
-        "lowstate": OfflineInekf(
-            imu_source="lowstate",
-            robot_freq=args.robot_freq,
-            gyroscope_noise=args.gyroscope_noise,
-            accelerometer_noise=args.accelerometer_noise,
-            gyroscope_bias_noise=args.gyroscope_bias_noise,
-            accelerometer_bias_noise=args.accelerometer_bias_noise,
-            contact_noise=args.contact_noise,
-            joint_position_noise=args.joint_position_noise,
-            contact_velocity_noise=args.contact_velocity_noise,
-            imu_rotation_rpy=args.imu_rotation_rpy,
-            imu_translation_xyz=args.imu_translation_xyz,
-            compensate_imu_translation=args.compensate_imu_translation,
-        ),
-        "utlidar": OfflineInekf(
-            imu_source="utlidar",
-            robot_freq=args.robot_freq,
-            gyroscope_noise=args.gyroscope_noise,
-            accelerometer_noise=args.accelerometer_noise,
-            gyroscope_bias_noise=args.gyroscope_bias_noise,
-            accelerometer_bias_noise=args.accelerometer_bias_noise,
-            contact_noise=args.contact_noise,
-            joint_position_noise=args.joint_position_noise,
-            contact_velocity_noise=args.contact_velocity_noise,
-            imu_rotation_rpy=args.imu_rotation_rpy,
-            imu_translation_xyz=args.imu_translation_xyz,
-            compensate_imu_translation=args.compensate_imu_translation,
-        ),
-    }
+    shared_kwargs = dict(
+        robot_freq=args.robot_freq,
+        gyroscope_noise=args.gyroscope_noise,
+        accelerometer_noise=args.accelerometer_noise,
+        gyroscope_bias_noise=args.gyroscope_bias_noise,
+        accelerometer_bias_noise=args.accelerometer_bias_noise,
+        contact_noise=args.contact_noise,
+        joint_position_noise=args.joint_position_noise,
+        contact_velocity_noise=args.contact_velocity_noise,
+        imu_rotation_rpy=args.imu_rotation_rpy,
+        imu_translation_xyz=args.imu_translation_xyz,
+        compensate_imu_translation=args.compensate_imu_translation,
+    )
+    filters = {key: InekfCore(imu_source=key, **shared_kwargs) for key in ["lowstate", "utlidar"]}
 
     estimated_samples: Dict[str, List[OdomSample]] = {"lowstate": [], "utlidar": []}
     ref_samples: List[OdomSample] = []
@@ -577,57 +353,69 @@ def main() -> int:
             raise RuntimeError(f"ROS type mismatch for {topic}: expected {expected_type}")
 
     con = sqlite3.connect(str(bag_db3))
-    try:
-        topic_rows = con.execute("SELECT id, name, type FROM topics").fetchall()
-        id_to_topic: Dict[int, str] = {}
-        topic_to_id: Dict[str, int] = {}
-        for topic_id, name, type_name in topic_rows:
-            id_to_topic[int(topic_id)] = str(name)
-            topic_to_id[str(name)] = int(topic_id)
-            if name in topic_to_type_name and topic_to_type_name[name] != type_name:
-                raise RuntimeError(
-                    f"Topic type mismatch for {name}: bag has {type_name}, expected {topic_to_type_name[name]}"
+    topic_rows = con.execute("SELECT id, name, type FROM topics").fetchall()
+    id_to_topic: Dict[int, str] = {}
+    topic_to_id: Dict[str, int] = {}
+    for topic_id, name, type_name in topic_rows:
+        id_to_topic[int(topic_id)] = str(name)
+        topic_to_id[str(name)] = int(topic_id)
+        if name in topic_to_type_name and topic_to_type_name[name] != type_name:
+            raise RuntimeError(
+                f"Topic type mismatch for {name}: bag has {type_name}, expected {topic_to_type_name[name]}"
+            )
+
+    required_topics = [args.lowstate_topic, args.utlidar_imu_topic, args.ref_odom_topic]
+    missing = [t for t in required_topics if t not in topic_to_id]
+    if missing:
+        raise RuntimeError(f"Missing required topic(s) in bag: {', '.join(missing)}")
+
+    selected_ids = [topic_to_id[t] for t in required_topics]
+    placeholders = ",".join("?" for _ in selected_ids)
+    query = (
+        f"SELECT topic_id, timestamp, data FROM messages "
+        f"WHERE topic_id IN ({placeholders}) ORDER BY timestamp ASC"
+    )
+
+    for topic_id, timestamp_ns, data in con.execute(query, selected_ids):
+        topic = id_to_topic[int(topic_id)]
+        msg = deserialize_message(data, topic_to_cls[topic])
+
+        if topic == args.utlidar_imu_topic:
+            filters["utlidar"].store_utlidar_imu(
+                gyro=np.array(
+                    [float(msg.angular_velocity.x), float(msg.angular_velocity.y), float(msg.angular_velocity.z)]
+                ),
+                acc=np.array(
+                    [
+                        float(msg.linear_acceleration.x),
+                        float(msg.linear_acceleration.y),
+                        float(msg.linear_acceleration.z),
+                    ]
+                ),
+                stamp_sec=stamp_to_sec(msg.header.stamp),
+            )
+            continue
+
+        if topic == args.ref_odom_topic:
+            p = msg.pose.pose.position
+            q = msg.pose.pose.orientation
+            ref_samples.append(
+                OdomSample(
+                    timestamp_ns=int(timestamp_ns),
+                    position=np.array([float(p.x), float(p.y), float(p.z)]),
+                    quaternion_xyzw=np.array([float(q.x), float(q.y), float(q.z), float(q.w)]),
                 )
+            )
+            continue
 
-        required_topics = [args.lowstate_topic, args.utlidar_imu_topic, args.ref_odom_topic]
-        missing = [t for t in required_topics if t not in topic_to_id]
-        if missing:
-            raise RuntimeError(f"Missing required topic(s) in bag: {', '.join(missing)}")
+        if topic == args.lowstate_topic:
+            for key, inekf_filter in filters.items():
+                result = inekf_filter.process_lowstate(msg)
+                if result is not None:
+                    filter_state, _gyro = result
+                    estimated_samples[key].append(_filter_state_to_odom_sample(filter_state, int(timestamp_ns)))
 
-        selected_ids = [topic_to_id[t] for t in required_topics]
-        placeholders = ",".join("?" for _ in selected_ids)
-        query = (
-            f"SELECT topic_id, timestamp, data FROM messages "
-            f"WHERE topic_id IN ({placeholders}) ORDER BY timestamp ASC"
-        )
-
-        for topic_id, timestamp_ns, data in con.execute(query, selected_ids):
-            topic = id_to_topic[int(topic_id)]
-            msg = deserialize_message(data, topic_to_cls[topic])
-
-            if topic == args.utlidar_imu_topic:
-                filters["utlidar"].utlidar_callback(msg)
-                continue
-
-            if topic == args.ref_odom_topic:
-                p = msg.pose.pose.position
-                q = msg.pose.pose.orientation
-                ref_samples.append(
-                    OdomSample(
-                        timestamp_ns=int(timestamp_ns),
-                        position=np.array([float(p.x), float(p.y), float(p.z)]),
-                        quaternion_xyzw=np.array([float(q.x), float(q.y), float(q.z), float(q.w)]),
-                    )
-                )
-                continue
-
-            if topic == args.lowstate_topic:
-                for key, odom_filter in filters.items():
-                    sample = odom_filter.process_lowstate(msg, int(timestamp_ns))
-                    if sample is not None:
-                        estimated_samples[key].append(sample)
-    finally:
-        con.close()
+    con.close()
 
     print(f"Bag file: {bag_db3}")
     print(f"Reference topic samples ({args.ref_odom_topic}): {len(ref_samples)}")

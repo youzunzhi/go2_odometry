@@ -20,7 +20,8 @@ ros2 launch go2_odometry go2_odometry_switch.launch.py odom_type:=use_full_odom
 ## Architecture
 
 - **State Converter** (`src/go2_state_converter_node.cpp`): Converts `/lowstate` to `/joint_states` and `/imu`. Handles SDK-to-URDF joint reordering via `urdf_to_sdk_index_`.
-- **InEKF Odometry** (`scripts/inekf_odom.py`): Subscribes to `/lowstate`, publishes `/tf` and `/odometry/filtered`. Noise parameters configurable via ROS params.
+- **InEKF Core** (`scripts/inekf_core.py`): Shared filter logic (IMU handling, feet kinematics, propagate+correct cycle). Used by both `inekf_odom.py` and `compare_bag_inekf_odometry.py`.
+- **InEKF Odometry** (`scripts/inekf_odom.py`): ROS node wrapping `InekfCore`. Subscribes to `/lowstate`, publishes `/tf` and `/odometry/filtered`. Noise parameters configurable via ROS params.
 - **Motion Capture** (`scripts/mocap_base_pose.py`): Qualisys integration for ground truth odometry.
 - **State Publisher** (`go2_state_publisher.launch.py`): Robot state publisher + state converter for TF tree / RVIZ.
 
