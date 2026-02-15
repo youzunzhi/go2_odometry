@@ -1,82 +1,49 @@
 ## Overview
 
-This is a ROS2 package for state estimation on the Unitree Go2 robot using invariant extended Kalman filters (InEKF). The package provides multiple odometry sources and converts Unitree-specific messages to standard ROS messages.
+ROS2 package for state estimation on the Unitree Go2 using invariant extended Kalman filters (InEKF). Converts Unitree-specific messages to standard ROS messages and provides multiple odometry sources.
 
 ## Build and Development Commands
 
-This is a ROS2 ament_cmake package. Common commands:
-
 ```bash
-# Build the package (from workspace root)
 colcon build --packages-select go2_odometry
 
-# Build with debug symbols
-colcon build --packages-select go2_odometry --cmake-args -DCMAKE_BUILD_TYPE=Debug
-
-# Run tests
-colcon test --packages-select go2_odometry
-
-# Lint Python code (ruff configured with line-length=120)
-ruff check scripts/
-ruff format scripts/
-
-# Lint C++ code (uses ament_lint_auto)
-colcon test --packages-select go2_odometry --ctest-args -R lint
 ```
 
 ## Main Launch Files
 
-The primary entry point is `go2_odometry_switch.launch.py` which accepts an `odom_type` parameter:
+Entry point: `go2_odometry_switch.launch.py` with `odom_type` parameter (`use_full_odom` | `fake` | `mocap`).
 
-- `use_full_odom` (default): Uses InEKF-based odometry
-- `fake`: Fixed position odometry for debugging
-- `mocap`: Motion capture-based odometry
-
-Example usage:
 ```bash
 ros2 launch go2_odometry go2_odometry_switch.launch.py odom_type:=use_full_odom
 ```
 
 ## Architecture
 
-### Core Components
+- **State Converter** (`src/go2_state_converter_node.cpp`): Converts `/lowstate` to `/joint_states` and `/imu`. Handles SDK-to-URDF joint reordering via `urdf_to_sdk_index_`.
+- **InEKF Odometry** (`scripts/inekf_odom.py`): Subscribes to `/lowstate`, publishes `/tf` and `/odometry/filtered`. Noise parameters configurable via ROS params.
+- **Motion Capture** (`scripts/mocap_base_pose.py`): Qualisys integration for ground truth odometry.
+- **State Publisher** (`go2_state_publisher.launch.py`): Robot state publisher + state converter for TF tree / RVIZ.
 
-1. **State Converter Node** (`src/go2_state_converter_node.cpp`)
-   - Converts Unitree `LowState` messages to standard ROS messages
-   - Publishes `/joint_states` and `/imu` topics
-   - Handles joint ordering conversion from SDK to URDF format
-
-2. **InEKF Odometry** (`scripts/inekf_odom.py`)
-   - Main state estimation using invariant extended Kalman filter
-   - Subscribes to `/lowstate` for IMU and joint data
-   - Publishes `/tf` and `/odometry/filtered`
-
-3. **Motion Capture Integration** (`scripts/mocap_base_pose.py`)
-   - Connects to Qualisys motion capture system
-   - Provides ground truth odometry when available
-
-4. **State Publisher** (`go2_state_publisher.launch.py`)
-   - Launches robot state publisher and state converter
-   - Required for RVIZ visualization and TF tree
-
-### Dependencies
-
-Key external dependencies:
-- `unitree_ros2`: Unitree robot interface
-- `invariant-ekf`: InEKF library (custom fork)
-- `go2_description`: URDF files (custom fork)
-- `pinocchio`: Robotics library for kinematics
-
-### Message Flow
+Dependencies: `unitree_ros2`, `invariant-ekf` (custom fork), `go2_description` (custom fork), `pinocchio`.
 
 ```
-/lowstate (unitree_go/LowState) -> state_converter_node -> /joint_states, /imu
+/lowstate -> state_converter_node -> /joint_states, /imu
 /lowstate -> inekf_odom.py -> /odometry/filtered, /tf
 ```
 
-## Development Notes
+## Debug Scripts
 
-- Joint ordering: SDK and URDF use different joint orders, handled by `urdf_to_sdk_index_` mapping
-- InEKF parameters are configurable via ROS parameters (noise covariances, frame names)
-- Motion capture can operate in two modes: odometry replacement or ground truth publishing
-- The package supports both C++ (state converter) and Python (estimation algorithms) nodes
+All scripts support `--help` for full option details.
+
+- **`save_sensor_msgs.py`**: Records `/lowstate`, `/utlidar/imu`, `/utlidar/robot_odom` to a rosbag2 SQLite database.
+  ```bash
+  python3 debug_scripts/save_sensor_msgs.py --duration 10
+  ```
+
+- **`compare_bag_inekf_odometry.py`**: Replays a recorded bag through two parallel InEKF pipelines (`lowstate` and `utlidar` IMU sources), compares against `/utlidar/robot_odom` reference. Outputs CSV and plots to `comparison_output/`.
+  ```bash
+  python3 debug_scripts/compare_bag_inekf_odometry.py --bag path/to/bag/
+  ```
+  The `utlidar` IMU is mounted with a different orientation/position than the body frame. Use `--imu-rotation-rpy` (radians) and `--imu-translation-xyz` (meters) to specify the extrinsic transform; add `--compensate-imu-translation` to correct for lever-arm effects on the accelerometer.
+
+- **`pose_comparison.py`**: Live ROS2 node comparing two odometry topics in real-time with time-synchronized pairs. Outputs plots/CSV after a fixed duration.
