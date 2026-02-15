@@ -8,7 +8,7 @@ debug_scripts/compare_bag_inekf_odometry.py (offline bag replay).
 
 import sys
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pinocchio as pin
@@ -24,6 +24,7 @@ from go2_description.loader import loadGo2
 from inekf import InEKF, Kinematics, NoiseParams, RobotState
 
 CONTACT_THRESHOLD = 22
+NUM_FEET = 4
 
 # Unitree SDK joint order -> URDF joint order
 _URDF_FROM_SDK = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
@@ -31,12 +32,47 @@ _URDF_FROM_SDK = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
 # Unitree SDK foot order -> pinocchio foot order (FL, FR, RL, RR)
 _PIN_FROM_SDK_FOOT = [1, 0, 3, 2]
 
+# Noise parameter defaults (shared by inekf_odom.py and compare_bag_inekf_odometry.py)
+DEFAULT_ROBOT_FREQ = 500.0
+DEFAULT_GYROSCOPE_NOISE = 0.01
+DEFAULT_ACCELEROMETER_NOISE = 0.1
+DEFAULT_GYROSCOPE_BIAS_NOISE = 0.00001
+DEFAULT_ACCELEROMETER_BIAS_NOISE = 0.0001
+DEFAULT_CONTACT_NOISE = 0.001
+DEFAULT_JOINT_POSITION_NOISE = 0.001
+DEFAULT_CONTACT_VELOCITY_NOISE = 0.001
+
+# Skip reasons returned by process_lowstate when the filter cannot produce output
+SKIP_WAITING_FOR_IMU = "waiting_for_imu"
+SKIP_WAITING_FOR_CONTACT = "waiting_for_contact"
+
 
 def stamp_to_sec(stamp) -> Optional[float]:
     """Convert a ROS2 Time stamp to seconds. Returns None if stamp is None."""
     if stamp is None:
         return None
     return float(stamp.sec) + 1e-9 * float(stamp.nanosec)
+
+
+def extract_position_quaternion(filter_state) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract (position(3,), quaternion_xyzw(4,)) from an InEKF RobotState."""
+    position = filter_state.getPosition().reshape(3).copy()
+    q = pin.Quaternion(filter_state.getRotation())
+    q.normalize()
+    quaternion_xyzw = np.array([q.x, q.y, q.z, q.w])
+    return position, quaternion_xyzw
+
+
+def unpack_imu_msg(msg) -> Tuple[np.ndarray, np.ndarray, Optional[float]]:
+    """Extract (gyro(3,), acc(3,), stamp_sec) from a sensor_msgs/Imu message."""
+    gyro = np.array(
+        [float(msg.angular_velocity.x), float(msg.angular_velocity.y), float(msg.angular_velocity.z)]
+    )
+    acc = np.array(
+        [float(msg.linear_acceleration.x), float(msg.linear_acceleration.y), float(msg.linear_acceleration.z)]
+    )
+    stamp_sec = stamp_to_sec(msg.header.stamp)
+    return gyro, acc, stamp_sec
 
 
 class InekfCore:
@@ -49,14 +85,14 @@ class InekfCore:
     def __init__(
         self,
         imu_source: str,
-        robot_freq: float = 500.0,
-        gyroscope_noise: float = 0.01,
-        accelerometer_noise: float = 0.1,
-        gyroscope_bias_noise: float = 0.00001,
-        accelerometer_bias_noise: float = 0.0001,
-        contact_noise: float = 0.001,
-        joint_position_noise: float = 0.001,
-        contact_velocity_noise: float = 0.001,
+        robot_freq: float = DEFAULT_ROBOT_FREQ,
+        gyroscope_noise: float = DEFAULT_GYROSCOPE_NOISE,
+        accelerometer_noise: float = DEFAULT_ACCELEROMETER_NOISE,
+        gyroscope_bias_noise: float = DEFAULT_GYROSCOPE_BIAS_NOISE,
+        accelerometer_bias_noise: float = DEFAULT_ACCELEROMETER_BIAS_NOISE,
+        contact_noise: float = DEFAULT_CONTACT_NOISE,
+        joint_position_noise: float = DEFAULT_JOINT_POSITION_NOISE,
+        contact_velocity_noise: float = DEFAULT_CONTACT_VELOCITY_NOISE,
         imu_rotation_rpy: Sequence[float] = (0.0, 0.0, 0.0),
         imu_translation_xyz: Sequence[float] = (0.0, 0.0, 0.0),
         compensate_imu_translation: bool = False,
@@ -167,7 +203,7 @@ class InekfCore:
         contact_list = [bool(f >= CONTACT_THRESHOLD) for f in f_pin]
         pose_list = []
         normed_covariance_list = []
-        for i in range(4):
+        for i in range(NUM_FEET):
             pose_list.append(self.robot.data.oMf[self.foot_frame_id[i]])
             jc = pin.getFrameJacobian(
                 self.robot.model, self.robot.data, self.foot_frame_id[i], pin.LOCAL
@@ -176,16 +212,16 @@ class InekfCore:
 
         return contact_list, pose_list, normed_covariance_list
 
-    def process_lowstate(self, msg) -> Optional[Tuple[RobotState, np.ndarray]]:
+    def process_lowstate(self, msg) -> Union[Tuple[RobotState, np.ndarray], str]:
         """
         Run the full InEKF propagate+correct cycle on a LowState message.
 
         Returns (filter_state, gyro) after the correction step,
-        or None if the filter is waiting for IMU data or initial foot contact.
+        or a SKIP_* string if the filter cannot produce output yet.
         """
         imu_state, gyro = self.get_imu_measurement(msg)
         if imu_state is None:
-            return None
+            return SKIP_WAITING_FOR_IMU
         assert gyro is not None, "gyro must be available when imu_state is available"
 
         contact_list, pose_list, normed_covariance_list = self.feet_transformations(msg)
@@ -193,13 +229,13 @@ class InekfCore:
             if any(contact_list):
                 self.pause = False
             else:
-                return None
+                return SKIP_WAITING_FOR_CONTACT
 
         self.filter.propagate(imu_state, self.dt)
 
         contact_pairs = []
         kinematics_list = []
-        for i in range(len(self.foot_frame_name)):
+        for i in range(NUM_FEET):
             contact_pairs.append((i, contact_list[i]))
             kinematics = Kinematics(
                 i,

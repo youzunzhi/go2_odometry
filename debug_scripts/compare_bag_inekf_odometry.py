@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
-import pinocchio as pin
 from nav_msgs.msg import Odometry
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
@@ -17,7 +16,19 @@ from sensor_msgs.msg import Imu
 from unitree_go.msg import LowState
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-from inekf_core import InekfCore, stamp_to_sec  # noqa: E402
+from inekf_core import (  # noqa: E402
+    DEFAULT_ACCELEROMETER_BIAS_NOISE,
+    DEFAULT_ACCELEROMETER_NOISE,
+    DEFAULT_CONTACT_NOISE,
+    DEFAULT_CONTACT_VELOCITY_NOISE,
+    DEFAULT_GYROSCOPE_BIAS_NOISE,
+    DEFAULT_GYROSCOPE_NOISE,
+    DEFAULT_JOINT_POSITION_NOISE,
+    DEFAULT_ROBOT_FREQ,
+    InekfCore,
+    extract_position_quaternion,
+    unpack_imu_msg,
+)
 
 
 DEFAULT_LOWSTATE_TOPIC = "/lowstate"
@@ -34,15 +45,11 @@ class OdomSample:
 
 def _filter_state_to_odom_sample(filter_state, timestamp_ns: int) -> OdomSample:
     """Extract position and orientation from an InEKF filter state."""
-    state_position = filter_state.getPosition().reshape(3)
-    state_quaternion = pin.Quaternion(filter_state.getRotation())
-    state_quaternion.normalize()
+    position, quaternion_xyzw = extract_position_quaternion(filter_state)
     return OdomSample(
         timestamp_ns=timestamp_ns,
-        position=state_position.copy(),
-        quaternion_xyzw=np.array(
-            [state_quaternion.x, state_quaternion.y, state_quaternion.z, state_quaternion.w]
-        ),
+        position=position,
+        quaternion_xyzw=quaternion_xyzw,
     )
 
 
@@ -271,14 +278,14 @@ def parse_args() -> argparse.Namespace:
         default=0.1,
         help="Maximum timestamp difference used for synchronization (default: 0.1s).",
     )
-    parser.add_argument("--robot-freq", type=float, default=500.0)
-    parser.add_argument("--gyroscope-noise", type=float, default=0.01)
-    parser.add_argument("--accelerometer-noise", type=float, default=0.1)
-    parser.add_argument("--gyroscope-bias-noise", type=float, default=0.00001)
-    parser.add_argument("--accelerometer-bias-noise", type=float, default=0.0001)
-    parser.add_argument("--contact-noise", type=float, default=0.001)
-    parser.add_argument("--joint-position-noise", type=float, default=0.001)
-    parser.add_argument("--contact-velocity-noise", type=float, default=0.001)
+    parser.add_argument("--robot-freq", type=float, default=DEFAULT_ROBOT_FREQ)
+    parser.add_argument("--gyroscope-noise", type=float, default=DEFAULT_GYROSCOPE_NOISE)
+    parser.add_argument("--accelerometer-noise", type=float, default=DEFAULT_ACCELEROMETER_NOISE)
+    parser.add_argument("--gyroscope-bias-noise", type=float, default=DEFAULT_GYROSCOPE_BIAS_NOISE)
+    parser.add_argument("--accelerometer-bias-noise", type=float, default=DEFAULT_ACCELEROMETER_BIAS_NOISE)
+    parser.add_argument("--contact-noise", type=float, default=DEFAULT_CONTACT_NOISE)
+    parser.add_argument("--joint-position-noise", type=float, default=DEFAULT_JOINT_POSITION_NOISE)
+    parser.add_argument("--contact-velocity-noise", type=float, default=DEFAULT_CONTACT_VELOCITY_NOISE)
     parser.add_argument(
         "--imu-rotation-rpy",
         type=float,
@@ -381,19 +388,8 @@ def main() -> int:
         msg = deserialize_message(data, topic_to_cls[topic])
 
         if topic == args.utlidar_imu_topic:
-            filters["utlidar"].store_utlidar_imu(
-                gyro=np.array(
-                    [float(msg.angular_velocity.x), float(msg.angular_velocity.y), float(msg.angular_velocity.z)]
-                ),
-                acc=np.array(
-                    [
-                        float(msg.linear_acceleration.x),
-                        float(msg.linear_acceleration.y),
-                        float(msg.linear_acceleration.z),
-                    ]
-                ),
-                stamp_sec=stamp_to_sec(msg.header.stamp),
-            )
+            gyro, acc, stamp_sec = unpack_imu_msg(msg)
+            filters["utlidar"].store_utlidar_imu(gyro=gyro, acc=acc, stamp_sec=stamp_sec)
             continue
 
         if topic == args.ref_odom_topic:
@@ -411,7 +407,7 @@ def main() -> int:
         if topic == args.lowstate_topic:
             for key, inekf_filter in filters.items():
                 result = inekf_filter.process_lowstate(msg)
-                if result is not None:
+                if not isinstance(result, str):
                     filter_state, _gyro = result
                     estimated_samples[key].append(_filter_state_to_odom_sample(filter_state, int(timestamp_ns)))
 

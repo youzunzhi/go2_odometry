@@ -9,13 +9,26 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from unitree_go.msg import LowState
-import pinocchio as pin
 
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 from rcl_interfaces.msg import ParameterDescriptor as PD
 
-from inekf_core import InekfCore, stamp_to_sec
+from inekf_core import (
+    DEFAULT_ACCELEROMETER_BIAS_NOISE,
+    DEFAULT_ACCELEROMETER_NOISE,
+    DEFAULT_CONTACT_NOISE,
+    DEFAULT_CONTACT_VELOCITY_NOISE,
+    DEFAULT_GYROSCOPE_BIAS_NOISE,
+    DEFAULT_GYROSCOPE_NOISE,
+    DEFAULT_JOINT_POSITION_NOISE,
+    DEFAULT_ROBOT_FREQ,
+    SKIP_WAITING_FOR_CONTACT,
+    SKIP_WAITING_FOR_IMU,
+    InekfCore,
+    extract_position_quaternion,
+    unpack_imu_msg,
+)
 
 
 class Inekf(Node):
@@ -28,14 +41,14 @@ class Inekf(Node):
             parameters=[
                 ("base_frame", "base", PD(description="Robot base frame name (for TF)")),
                 ("odom_frame", "odom", PD(description="World frame name (for TF)")),
-                ("robot_freq", 500.0, PD(description="Frequency at which the robot publish its state")),
-                ("gyroscope_noise", 0.01, PD(description="Inekf covariance value")),
-                ("accelerometer_noise", 0.1, PD(description="Inekf covariance value")),
-                ("gyroscopeBias_noise", 0.00001, PD(description="Inekf covariance value")),
-                ("accelerometerBias_noise", 0.0001, PD(description="Inekf covariance value")),
-                ("contact_noise", 0.001, PD(description="Inekf covariance value")),
-                ("joint_position_noise", 0.001, PD(description="Noise on joint configuration measurements to project using jacobian")),
-                ("contact_velocity_noise", 0.001, PD(description="Noise on contact velocity")),
+                ("robot_freq", DEFAULT_ROBOT_FREQ, PD(description="Frequency at which the robot publish its state")),
+                ("gyroscope_noise", DEFAULT_GYROSCOPE_NOISE, PD(description="Inekf covariance value")),
+                ("accelerometer_noise", DEFAULT_ACCELEROMETER_NOISE, PD(description="Inekf covariance value")),
+                ("gyroscopeBias_noise", DEFAULT_GYROSCOPE_BIAS_NOISE, PD(description="Inekf covariance value")),
+                ("accelerometerBias_noise", DEFAULT_ACCELEROMETER_BIAS_NOISE, PD(description="Inekf covariance value")),
+                ("contact_noise", DEFAULT_CONTACT_NOISE, PD(description="Inekf covariance value")),
+                ("joint_position_noise", DEFAULT_JOINT_POSITION_NOISE, PD(description="Noise on joint configuration measurements to project using jacobian")),
+                ("contact_velocity_noise", DEFAULT_CONTACT_VELOCITY_NOISE, PD(description="Noise on contact velocity")),
                 ("imu_source", "lowstate", PD(description="IMU source used for propagation: 'lowstate' or 'utlidar'")),
                 ("utlidar_imu_topic", "/utlidar/imu", PD(description="Topic used when imu_source='utlidar'")),
                 (
@@ -97,42 +110,25 @@ class Inekf(Node):
     def get_vector3_param(self, parameter_name):
         raw_value = self.get_parameter(parameter_name).value
         if isinstance(raw_value, str):
-            try:
-                raw_value = ast.literal_eval(raw_value)
-            except (ValueError, SyntaxError):
-                self.get_logger().warning(f"{parameter_name} must be a 3D vector. Fallback to [0, 0, 0].")
-                return np.zeros(3)
-
-        try:
-            vector = np.array(raw_value, dtype=float).reshape(-1)
-        except (TypeError, ValueError):
-            self.get_logger().warning(f"{parameter_name} must be a 3D vector. Fallback to [0, 0, 0].")
-            return np.zeros(3)
-
-        if vector.shape[0] != 3:
-            self.get_logger().warning(f"{parameter_name} must contain 3 values. Fallback to [0, 0, 0].")
-            return np.zeros(3)
+            raw_value = ast.literal_eval(raw_value)
+        vector = np.array(raw_value, dtype=float).reshape(-1)
+        assert vector.shape[0] == 3, (
+            f"Parameter '{parameter_name}' must contain exactly 3 values, got {vector.shape[0]}"
+        )
         return vector
 
     def utlidar_callback(self, msg):
-        self.core.store_utlidar_imu(
-            gyro=np.array(
-                [float(msg.angular_velocity.x), float(msg.angular_velocity.y), float(msg.angular_velocity.z)]
-            ),
-            acc=np.array(
-                [float(msg.linear_acceleration.x), float(msg.linear_acceleration.y), float(msg.linear_acceleration.z)]
-            ),
-            stamp_sec=stamp_to_sec(msg.header.stamp),
-        )
+        gyro, acc, stamp_sec = unpack_imu_msg(msg)
+        self.core.store_utlidar_imu(gyro=gyro, acc=acc, stamp_sec=stamp_sec)
 
     def listener_callback(self, msg):
         result = self.core.process_lowstate(msg)
-        if result is None:
-            if self.core.imu_source == "utlidar" and self.core.latest_utlidar_gyro is None:
+        if isinstance(result, str):
+            if result == SKIP_WAITING_FOR_IMU:
                 self.get_logger().info(
                     "Waiting for first /utlidar/imu message before propagating filter.", once=True
                 )
-            elif self.core.pause:
+            elif result == SKIP_WAITING_FOR_CONTACT:
                 self.get_logger().info(
                     "Waiting for one or more foot to touch the ground to start filter.", once=True
                 )
@@ -148,13 +144,9 @@ class Inekf(Node):
     def publish_state(self, filter_state, twist_angular_vel):
         timestamp = self.get_clock().now().to_msg()
 
+        position, quat = extract_position_quaternion(filter_state)
         state_rotation = filter_state.getRotation()
-        state_position = filter_state.getPosition()
-        state_velocity = state_rotation.T @ filter_state.getX()[0:3, 3:4]
-        state_velocity = state_velocity.reshape(-1)
-
-        state_quaternion = pin.Quaternion(state_rotation)
-        state_quaternion.normalize()
+        velocity = (state_rotation.T @ filter_state.getX()[0:3, 3:4]).reshape(-1)
 
         # TF2 message
         transform_msg = TransformStamped()
@@ -162,14 +154,14 @@ class Inekf(Node):
         transform_msg.child_frame_id = self.base_frame
         transform_msg.header.frame_id = self.odom_frame
 
-        transform_msg.transform.translation.x = state_position[0]
-        transform_msg.transform.translation.y = state_position[1]
-        transform_msg.transform.translation.z = state_position[2]
+        transform_msg.transform.translation.x = position[0]
+        transform_msg.transform.translation.y = position[1]
+        transform_msg.transform.translation.z = position[2]
 
-        transform_msg.transform.rotation.x = state_quaternion.x
-        transform_msg.transform.rotation.y = state_quaternion.y
-        transform_msg.transform.rotation.z = state_quaternion.z
-        transform_msg.transform.rotation.w = state_quaternion.w
+        transform_msg.transform.rotation.x = quat[0]
+        transform_msg.transform.rotation.y = quat[1]
+        transform_msg.transform.rotation.z = quat[2]
+        transform_msg.transform.rotation.w = quat[3]
 
         self.tf_broadcaster.sendTransform(transform_msg)
 
@@ -179,18 +171,18 @@ class Inekf(Node):
         odom_msg.child_frame_id = self.base_frame
         odom_msg.header.frame_id = self.odom_frame
 
-        odom_msg.pose.pose.position.x = state_position[0]
-        odom_msg.pose.pose.position.y = state_position[1]
-        odom_msg.pose.pose.position.z = state_position[2]
+        odom_msg.pose.pose.position.x = position[0]
+        odom_msg.pose.pose.position.y = position[1]
+        odom_msg.pose.pose.position.z = position[2]
 
-        odom_msg.pose.pose.orientation.x = state_quaternion.x
-        odom_msg.pose.pose.orientation.y = state_quaternion.y
-        odom_msg.pose.pose.orientation.z = state_quaternion.z
-        odom_msg.pose.pose.orientation.w = state_quaternion.w
+        odom_msg.pose.pose.orientation.x = quat[0]
+        odom_msg.pose.pose.orientation.y = quat[1]
+        odom_msg.pose.pose.orientation.z = quat[2]
+        odom_msg.pose.pose.orientation.w = quat[3]
 
-        odom_msg.twist.twist.linear.x = state_velocity[0]
-        odom_msg.twist.twist.linear.y = state_velocity[1]
-        odom_msg.twist.twist.linear.z = state_velocity[2]
+        odom_msg.twist.twist.linear.x = velocity[0]
+        odom_msg.twist.twist.linear.y = velocity[1]
+        odom_msg.twist.twist.linear.z = velocity[2]
 
         odom_msg.twist.twist.angular.x = float(twist_angular_vel[0])
         odom_msg.twist.twist.angular.y = float(twist_angular_vel[1])
