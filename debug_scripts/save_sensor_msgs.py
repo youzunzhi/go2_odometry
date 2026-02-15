@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 DEFAULT_DURATION_SECONDS = 10.0
-DEFAULT_TOPICS = ["/lowstate", "/utlidar/imu"]
+DEFAULT_TOPICS = ["/lowstate", "/utlidar/imu", "/utlidar/robot_odom"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,15 +38,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    if args.duration <= 0.0:
-        raise ValueError("--duration must be > 0 seconds.")
+    assert args.duration > 0.0, "--duration must be > 0 seconds."
 
     # ros2 bag record creates a directory; parent must exist.
     parent = args.output.parent
-    if not parent.exists():
-        raise ValueError(f"Output parent directory does not exist: {parent}")
-    if not parent.is_dir():
-        raise ValueError(f"Output parent path is not a directory: {parent}")
+    assert parent.exists(), f"Output parent directory does not exist: {parent}"
+    assert parent.is_dir(), f"Output parent path is not a directory: {parent}"
 
 
 def run_rosbag_record(duration: float, output: Path) -> int:
