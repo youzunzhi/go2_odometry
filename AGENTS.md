@@ -36,15 +36,14 @@ Dependencies: `unitree_ros2`, `invariant-ekf` (custom fork), `go2_description` (
 
 All scripts support `--help` for full option details.
 
-- **`save_sensor_msgs.py`**: Records `/lowstate`, `/utlidar/imu`, `/utlidar/robot_odom` to a rosbag2 SQLite database.
+- **`save_sensor_msgs.py`**: Records `/lowstate` and `/utlidar/robot_odom` to a rosbag2 SQLite database.
   ```bash
   python3 debug_scripts/save_sensor_msgs.py --duration 10
   ```
 
-- **`compare_bag_inekf_odometry.py`**: Replays a recorded bag through two parallel InEKF pipelines (`lowstate` and `utlidar` IMU sources), compares against `/utlidar/robot_odom` reference. Outputs CSV and plots to `comparison_output/`.
+- **`compare_bag_inekf_odometry.py`**: Replays a recorded bag through one InEKF pipeline (IMU from `/lowstate`), compares against `/utlidar/robot_odom` reference. Outputs CSV and plots to `comparison_output/`.
   ```bash
   python3 debug_scripts/compare_bag_inekf_odometry.py --bag path/to/bag/
   ```
-  The `utlidar` IMU is mounted with a different orientation/position than the body frame. Use `--imu-rotation-rpy` (radians) and `--imu-translation-xyz` (meters) to specify the extrinsic transform; add `--compensate-imu-translation` to correct for lever-arm effects on the accelerometer.
 
 - **`pose_comparison.py`**: Live ROS2 node comparing two odometry topics in real-time with time-synchronized pairs. Outputs plots/CSV after a fixed duration.

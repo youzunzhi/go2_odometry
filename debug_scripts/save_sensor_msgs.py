@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 DEFAULT_DURATION_SECONDS = 10.0
-DEFAULT_TOPICS = ["/lowstate", "/utlidar/imu", "/utlidar/robot_odom"]
+DEFAULT_TOPICS = ["/lowstate", "/utlidar/robot_odom"]
 
 
 def parse_args() -> argparse.Namespace:

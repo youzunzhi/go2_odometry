@@ -22,7 +22,7 @@ The main dependencies of this package are:
 ## Launchfiles
 
 ### go2_odometry_switch.launch.py
-"Main" launch file that takes a `mocap_type` argument to select between odometry sources.
+"Main" launch file that takes an `odom_type` argument to select between odometry sources.
 The choices are : `use_full_odom` (default), `fake`, `mocap`
 
 Command:
@@ -30,19 +30,19 @@ Command:
 ros2 launch go2_odometry go2_odometry_switch.launch.py odom_type:=<your choice>
 ```
 
-- `mocap_type:=use_full_odom`
+- `odom_type:=use_full_odom`
 Calls the **go2_inekf_odometry.launch.py** launch file.
 
-- `mocap_type:=fake`
+- `odom_type:=fake`
 Calls the **go2_fake_odom.launch.py** file.
 
-- `mocap_type:=mocap`
+- `odom_type:=mocap`
 Calls the **go2_mocap.launch.py** file.
 
 Parameters available depending on the odometry used :
 | Type of odometry choosen | | | | | |
 |-- |-- | --| --|--|--|
-|`use_full_odom`|imu_source|utlidar_imu_topic|imu_rotation_rpy|imu_translation_xyz|compensate_imu_translation|
+|`use_full_odom`| No parameters |
 |`fake` | base_height|
 | `mocap`|base_frame|odom_frame|wanted_body|qualisys_ip|publishing_freq|
 
@@ -59,16 +59,7 @@ A ros node connecting the [invariant extended kalman filter library](https://git
 
 This Kalman listens to:
 * `/lowstate`: always used to get joints and feet sensors data.
-* IMU source (configurable with `imu_source`):
-  * `lowstate` (default): use `/lowstate`.`imu_state`
-  * `utlidar`: use `/utlidar/imu` (or `utlidar_imu_topic`)
-
-Useful IMU-related parameters in `go2_inekf_odometry.launch.py`:
-- `imu_source` (`lowstate` or `utlidar`)
-- `utlidar_imu_topic` (default: `/utlidar/imu`)
-- `imu_rotation_rpy` (default: `[0.0, 0.0, 0.0]`, radians)
-- `imu_translation_xyz` (default: `[0.0, 0.0, 0.0]`, meters)
-- `compensate_imu_translation` (default: `false`)
+* `/lowstate`.`imu_state`: used as the IMU input.
 
 It then publishes on:
 * `/tf`: The floating base pose estimation

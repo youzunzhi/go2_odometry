@@ -19,20 +19,6 @@ class PoseComparator(Node):
         Initializes the node, subscribers, and plot.
         """
         super().__init__('pose_comparator')
-        self.declare_parameter('imu_source', 'utlidar')
-        imu_source = self.get_parameter('imu_source').get_parameter_value().string_value.lower()
-        source_to_shorthand = {
-            'lowstate': 'ls',
-            'utlidar': 'ut',
-        }
-        if imu_source not in source_to_shorthand:
-            self.get_logger().warn(
-                "Invalid imu_source. Expected 'lowstate' or 'utlidar'. Falling back to 'utlidar'."
-            )
-            imu_source = 'utlidar'
-        self.imu_source = imu_source
-        self.imu_source_short = source_to_shorthand[imu_source]
-
         self.output_dir = Path('comparison_output')
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.timestamp = datetime.now().strftime('%m%d-%H%M%S')
@@ -67,7 +53,7 @@ class PoseComparator(Node):
             rclpy.shutdown()
             return
 
-        suffix = f'{self.imu_source_short}_{self.timestamp}'
+        suffix = f'lowstate_{self.timestamp}'
         plot_path = self.output_dir / f'pose_comparison_{suffix}.png'
         csv_path = self.output_dir / f'pose_comparison_{suffix}.csv'
 

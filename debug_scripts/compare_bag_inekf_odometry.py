@@ -12,7 +12,6 @@ import numpy as np
 from nav_msgs.msg import Odometry
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
-from sensor_msgs.msg import Imu
 from unitree_go.msg import LowState
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -27,12 +26,10 @@ from inekf_core import (  # noqa: E402
     DEFAULT_ROBOT_FREQ,
     InekfCore,
     extract_position_quaternion,
-    unpack_imu_msg,
 )
 
 
 DEFAULT_LOWSTATE_TOPIC = "/lowstate"
-DEFAULT_UTLIDAR_IMU_TOPIC = "/utlidar/imu"
 DEFAULT_REF_ODOM_TOPIC = "/utlidar/robot_odom"
 
 
@@ -259,8 +256,8 @@ def save_plot(plot_path: Path, title_suffix: str, series: Dict[str, List[float]]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Replay a rosbag2 SQLite bag offline, run InEKF odometry twice "
-            "(imu_source=lowstate and imu_source=utlidar), and compare both against /utlidar/robot_odom."
+            "Replay a rosbag2 SQLite bag offline, run InEKF odometry from lowstate, "
+            "and compare against /utlidar/robot_odom."
         )
     )
     parser.add_argument(
@@ -270,7 +267,6 @@ def parse_args() -> argparse.Namespace:
         help="Bag directory or .db3 file path.",
     )
     parser.add_argument("--lowstate-topic", default=DEFAULT_LOWSTATE_TOPIC)
-    parser.add_argument("--utlidar-imu-topic", default=DEFAULT_UTLIDAR_IMU_TOPIC)
     parser.add_argument("--ref-odom-topic", default=DEFAULT_REF_ODOM_TOPIC)
     parser.add_argument(
         "--sync-window-s",
@@ -286,25 +282,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-noise", type=float, default=DEFAULT_CONTACT_NOISE)
     parser.add_argument("--joint-position-noise", type=float, default=DEFAULT_JOINT_POSITION_NOISE)
     parser.add_argument("--contact-velocity-noise", type=float, default=DEFAULT_CONTACT_VELOCITY_NOISE)
-    parser.add_argument(
-        "--imu-rotation-rpy",
-        type=float,
-        nargs=3,
-        default=(0.0, 0.0, 0.0),
-        metavar=("R", "P", "Y"),
-    )
-    parser.add_argument(
-        "--imu-translation-xyz",
-        type=float,
-        nargs=3,
-        default=(0.0, 0.0, 0.0),
-        metavar=("X", "Y", "Z"),
-    )
-    parser.add_argument(
-        "--compensate-imu-translation",
-        action="store_true",
-        help="Enable translation compensation between IMU origins.",
-    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -335,23 +312,18 @@ def main() -> int:
         contact_noise=args.contact_noise,
         joint_position_noise=args.joint_position_noise,
         contact_velocity_noise=args.contact_velocity_noise,
-        imu_rotation_rpy=args.imu_rotation_rpy,
-        imu_translation_xyz=args.imu_translation_xyz,
-        compensate_imu_translation=args.compensate_imu_translation,
     )
-    filters = {key: InekfCore(imu_source=key, **shared_kwargs) for key in ["lowstate", "utlidar"]}
+    filter_core = InekfCore(**shared_kwargs)
 
-    estimated_samples: Dict[str, List[OdomSample]] = {"lowstate": [], "utlidar": []}
+    estimated_samples: List[OdomSample] = []
     ref_samples: List[OdomSample] = []
 
     topic_to_cls = {
         args.lowstate_topic: LowState,
-        args.utlidar_imu_topic: Imu,
         args.ref_odom_topic: Odometry,
     }
     topic_to_type_name = {
         args.lowstate_topic: "unitree_go/msg/LowState",
-        args.utlidar_imu_topic: "sensor_msgs/msg/Imu",
         args.ref_odom_topic: "nav_msgs/msg/Odometry",
     }
     for topic, expected_type in topic_to_type_name.items():
@@ -371,7 +343,7 @@ def main() -> int:
                 f"Topic type mismatch for {name}: bag has {type_name}, expected {topic_to_type_name[name]}"
             )
 
-    required_topics = [args.lowstate_topic, args.utlidar_imu_topic, args.ref_odom_topic]
+    required_topics = [args.lowstate_topic, args.ref_odom_topic]
     missing = [t for t in required_topics if t not in topic_to_id]
     if missing:
         raise RuntimeError(f"Missing required topic(s) in bag: {', '.join(missing)}")
@@ -387,11 +359,6 @@ def main() -> int:
         topic = id_to_topic[int(topic_id)]
         msg = deserialize_message(data, topic_to_cls[topic])
 
-        if topic == args.utlidar_imu_topic:
-            gyro, acc, stamp_sec = unpack_imu_msg(msg)
-            filters["utlidar"].store_utlidar_imu(gyro=gyro, acc=acc, stamp_sec=stamp_sec)
-            continue
-
         if topic == args.ref_odom_topic:
             p = msg.pose.pose.position
             q = msg.pose.pose.orientation
@@ -405,32 +372,29 @@ def main() -> int:
             continue
 
         if topic == args.lowstate_topic:
-            for key, inekf_filter in filters.items():
-                result = inekf_filter.process_lowstate(msg)
-                if not isinstance(result, str):
-                    filter_state, _gyro = result
-                    estimated_samples[key].append(_filter_state_to_odom_sample(filter_state, int(timestamp_ns)))
+            result = filter_core.process_lowstate(msg)
+            if not isinstance(result, str):
+                filter_state, _gyro = result
+                estimated_samples.append(_filter_state_to_odom_sample(filter_state, int(timestamp_ns)))
 
     con.close()
 
     print(f"Bag file: {bag_db3}")
     print(f"Reference topic samples ({args.ref_odom_topic}): {len(ref_samples)}")
-    print(f"Estimated samples (imu_source=lowstate): {len(estimated_samples['lowstate'])}")
-    print(f"Estimated samples (imu_source=utlidar): {len(estimated_samples['utlidar'])}")
+    print(f"Estimated samples (lowstate IMU): {len(estimated_samples)}")
 
-    for key in ["lowstate", "utlidar"]:
-        synced_pairs = synchronize_pairs(ref_samples, estimated_samples[key], args.sync_window_s)
-        series = compute_diff_series(synced_pairs)
-        print_stats(f"Comparison: utlidar/robot_odom - inekf({key} imu)", synced_pairs, series)
+    synced_pairs = synchronize_pairs(ref_samples, estimated_samples, args.sync_window_s)
+    series = compute_diff_series(synced_pairs)
+    print_stats("Comparison: utlidar/robot_odom - inekf(lowstate imu)", synced_pairs, series)
 
-        csv_path = output_dir / f"pose_comparison_{key}_{timestamp_str}.csv"
-        save_csv(csv_path, series)
-        print(f"Saved CSV: {csv_path}")
+    csv_path = output_dir / f"pose_comparison_lowstate_{timestamp_str}.csv"
+    save_csv(csv_path, series)
+    print(f"Saved CSV: {csv_path}")
 
-        if not args.no_plot and synced_pairs:
-            plot_path = output_dir / f"pose_comparison_{key}_{timestamp_str}.png"
-            save_plot(plot_path, f"inekf({key} imu)", series)
-            print(f"Saved plot: {plot_path}")
+    if not args.no_plot and synced_pairs:
+        plot_path = output_dir / f"pose_comparison_lowstate_{timestamp_str}.png"
+        save_plot(plot_path, "inekf(lowstate imu)", series)
+        print(f"Saved plot: {plot_path}")
 
     return 0
 
